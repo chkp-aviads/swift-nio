@@ -944,6 +944,16 @@ public final class ChannelPipeline: ChannelInvoker {
         self.head?.next = self.tail
         self.tail?.prev = self.head
     }
+    
+    public func removeAllHandlers() {
+        self.eventLoop.assertInEventLoop()
+
+        if let head = self.head {
+            while let context = head.next, context !== tail {
+                removeHandlerFromPipeline(context: context, promise: nil)
+            }
+        }
+    }
 }
 
 extension ChannelPipeline: @unchecked Sendable {}
