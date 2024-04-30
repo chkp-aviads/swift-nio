@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(Linux) || os(Android)
-@_spi(Testing) import NIOFileSystem
+@_spi(Testing) import _NIOFileSystem
 import SystemPackage
 import XCTest
 
@@ -160,6 +160,24 @@ final class SyscallTests: XCTestCase {
         #else
         throw XCTSkip("'linkat' is only supported on Linux")
         #endif
+    }
+
+    func test_link() throws {
+        let testCases = [
+            MockTestCase(name: "link", .noInterrupt, "src", "dst") { _ in
+                try Syscall.link(from: "src", to: "dst").get()
+            },
+        ]
+        testCases.run()
+    }
+
+    func test_unlink() throws {
+        let testCases = [
+            MockTestCase(name: "unlink", .noInterrupt, "path") { _ in
+                try Syscall.unlink(path: "path").get()
+            },
+        ]
+        testCases.run()
     }
 
     func test_symlink() throws {

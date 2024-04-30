@@ -195,6 +195,29 @@ public enum Syscall {
     #endif
 
     @_spi(Testing)
+    public static func link(
+        from source: FilePath,
+        to destination: FilePath
+    ) -> Result<Void, Errno> {
+        return nothingOrErrno(retryOnInterrupt: false) {
+            source.withPlatformString { src in
+                destination.withPlatformString { dst in
+                    system_link(src, dst)
+                }
+            }
+        }
+    }
+
+    @_spi(Testing)
+    public static func unlink(path: FilePath) -> Result<Void, Errno> {
+        return nothingOrErrno(retryOnInterrupt: false) {
+            path.withPlatformString { ptr in
+                system_unlink(ptr)
+            }
+        }
+    }
+
+    @_spi(Testing)
     public static func symlink(
         to destination: FilePath,
         from source: FilePath
@@ -239,7 +262,7 @@ public enum Syscall {
         size: Int
     ) -> Result<Int, Errno> {
         valueOrErrno(retryOnInterrupt: false) {
-            system_sendfile(output.rawValue, input.rawValue, offset, size)
+            system_sendfile(output.rawValue, input.rawValue, off_t(offset), size)
         }
     }
     #endif
@@ -347,7 +370,11 @@ public enum Libc {
         return valueOrErrno {
             pathBytes.withUnsafeMutableBufferPointer { pointer in
                 // The array must be terminated with a nil.
+                #if os(Android)
+                libc_fts_open([pointer.baseAddress!, unsafeBitCast(0, to: UnsafeMutablePointer<CInterop.PlatformChar>.self)], options.rawValue)
+                #else
                 libc_fts_open([pointer.baseAddress, nil], options.rawValue)
+                #endif
             }
         }
     }

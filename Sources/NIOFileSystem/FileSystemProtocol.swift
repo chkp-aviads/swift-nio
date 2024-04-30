@@ -274,11 +274,11 @@ extension FileSystemProtocol {
     ///       automatically after the closure exits.
     /// - Important: The handle passed to `execute` must not escape the closure.
     /// - Returns: The result of the `execute` closure.
-    public func withFileHandle<R: Sendable>(
+    public func withFileHandle<Result>(
         forReadingAt path: FilePath,
         options: OpenOptions.Read = OpenOptions.Read(),
-        execute: (_ read: ReadFileHandle) async throws -> R
-    ) async throws -> R {
+        execute: (_ read: ReadFileHandle) async throws -> Result
+    ) async throws -> Result {
         let handle = try await self.openFile(forReadingAt: path, options: options)
         return try await withUncancellableTearDown {
             return try await execute(handle)
@@ -301,11 +301,11 @@ extension FileSystemProtocol {
     ///       automatically after the closure exits.
     /// - Important: The handle passed to `execute` must not escape the closure.
     /// - Returns: The result of the `execute` closure.
-    public func withFileHandle<R: Sendable>(
+    public func withFileHandle<Result>(
         forWritingAt path: FilePath,
         options: OpenOptions.Write = .newFile(replaceExisting: false),
-        execute: (_ write: WriteFileHandle) async throws -> R
-    ) async throws -> R {
+        execute: (_ write: WriteFileHandle) async throws -> Result
+    ) async throws -> Result {
         let handle = try await self.openFile(forWritingAt: path, options: options)
         return try await withUncancellableTearDown {
             return try await execute(handle)
@@ -333,11 +333,11 @@ extension FileSystemProtocol {
     ///       automatically after the closure exits.
     /// - Important: The handle passed to `execute` must not escape the closure.
     /// - Returns: The result of the `execute` closure.
-    public func withFileHandle<R: Sendable>(
+    public func withFileHandle<Result>(
         forReadingAndWritingAt path: FilePath,
         options: OpenOptions.Write = .newFile(replaceExisting: false),
-        execute: (_ readWrite: ReadWriteFileHandle) async throws -> R
-    ) async throws -> R {
+        execute: (_ readWrite: ReadWriteFileHandle) async throws -> Result
+    ) async throws -> Result {
         let handle = try await self.openFile(forReadingAndWritingAt: path, options: options)
         return try await withUncancellableTearDown {
             return try await execute(handle)
@@ -354,11 +354,11 @@ extension FileSystemProtocol {
     ///   - execute: A closure which provides access to the directory.
     /// - Important: The handle passed to `execute` must not escape the closure.
     /// - Returns: The result of the `execute` closure.
-    public func withDirectoryHandle<R: Sendable>(
+    public func withDirectoryHandle<Result>(
         atPath path: FilePath,
         options: OpenOptions.Directory = OpenOptions.Directory(),
-        execute: (_ directory: DirectoryFileHandle) async throws -> R
-    ) async throws -> R {
+        execute: (_ directory: DirectoryFileHandle) async throws -> Result
+    ) async throws -> Result {
         let handle = try await self.openDirectory(atPath: path, options: options)
         return try await withUncancellableTearDown {
             return try await execute(handle)
@@ -475,6 +475,42 @@ extension FileSystemProtocol {
             withIntermediateDirectories: createIntermediateDirectories,
             permissions: .defaultsForDirectory
         )
+    }
+
+    /// Create a temporary directory and removes it once the function returns.
+    ///
+    /// You can use `prefix` to specify the directory in which the temporary directory should
+    /// be created. If `prefix` is `nil` then the value of ``temporaryDirectory`` is used as
+    /// the prefix.
+    ///
+    /// The temporary directory, and all of its contents, is removed once `execute` returns.
+    ///
+    /// - Parameters:
+    ///   - prefix: The prefix to use for the path of the temporary directory.
+    ///   - options: Options used to create the directory.
+    ///   - execute: A closure which provides access to the directory and its path.
+    /// - Returns: The result of `execute`.
+    public func withTemporaryDirectory<Result>(
+        prefix: FilePath? = nil,
+        options: OpenOptions.Directory = OpenOptions.Directory(),
+        execute: (_ directory: DirectoryFileHandle, _ path: FilePath) async throws -> Result
+    ) async throws -> Result {
+        let template: FilePath
+
+        if let prefix = prefix {
+            template = prefix.appending("XXXXXXXX")
+        } else {
+            template = try await self.temporaryDirectory.appending("XXXXXXXX")
+        }
+
+        let directory = try await self.createTemporaryDirectory(template: template)
+        return try await withUncancellableTearDown {
+            try await withDirectoryHandle(atPath: directory, options: options) { handle in
+                try await execute(handle, directory)
+            }
+        } tearDown: { _ in
+            try await self.removeItem(at: directory, recursively: true)
+        }
     }
 }
 

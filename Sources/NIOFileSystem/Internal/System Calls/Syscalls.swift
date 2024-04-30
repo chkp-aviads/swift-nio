@@ -306,6 +306,31 @@ internal func system_linkat(
 }
 #endif
 
+/// link(2): Creates a new link for a file.
+internal func system_link(
+    _ old: UnsafePointer<CInterop.PlatformChar>,
+    _ new: UnsafePointer<CInterop.PlatformChar>
+) -> CInt {
+    #if ENABLE_MOCKING
+    if mockingEnabled {
+        return mock(old, new)
+    }
+    #endif
+    return link(old, new)
+}
+
+/// unlink(2): Remove a directory entry.
+internal func system_unlink(
+    _ path: UnsafePointer<CInterop.PlatformChar>
+) -> CInt {
+    #if ENABLE_MOCKING
+    if mockingEnabled {
+        return mock(path)
+    }
+    #endif
+    return unlink(path)
+}
+
 #if canImport(Glibc) || canImport(Musl)
 /// sendfile(2): Transfer data between descriptors
 internal func system_sendfile(
@@ -330,7 +355,7 @@ internal func system_sendfile(
 internal func libc_fdopendir(
     _ fd: FileDescriptor.RawValue
 ) -> CInterop.DirPointer {
-    return fdopendir(fd)
+    return fdopendir(fd)!
 }
 
 /// readdir(3): Returns a pointer to the next directory entry
@@ -396,12 +421,21 @@ internal func libc_confstr(
 #endif
 
 /// fts(3)
+#if os(Android)
+internal func libc_fts_open(
+    _ path: [UnsafeMutablePointer<CInterop.PlatformChar>],
+    _ options: CInt
+) -> UnsafeMutablePointer<CInterop.FTS> {
+    return fts_open(path, options, nil)!
+}
+#else
 internal func libc_fts_open(
     _ path: [UnsafeMutablePointer<CInterop.PlatformChar>?],
     _ options: CInt
 ) -> UnsafeMutablePointer<CInterop.FTS> {
     return fts_open(path, options, nil)
 }
+#endif
 
 /// fts(3)
 internal func libc_fts_read(

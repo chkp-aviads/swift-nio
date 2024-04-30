@@ -448,7 +448,7 @@ class BootstrapTest: XCTestCase {
         }
 
         // But now, it should be there.
-        XCTAssertNoThrow(_ = try server.pipeline.context(name: "AcceptHandler").wait())
+        XCTAssertNoThrow(_ = try server.pipeline.containsHandler(name: "AcceptHandler").wait())
         XCTAssertNoThrow(try server.close().wait())
     }
 
@@ -562,21 +562,21 @@ class BootstrapTest: XCTestCase {
     func testConvenienceOptionsAreEquivalentUniversalClient() throws {
         func setAndGetOption<Option>(option: Option, _ applyOptions : (NIOClientTCPBootstrap) -> NIOClientTCPBootstrap) throws
             -> Option.Value where Option : ChannelOption {
-            var optionRead : EventLoopFuture<Option.Value>?
+            let optionPromise = self.group.next().makePromise(of: Option.Value.self)
             XCTAssertNoThrow(try withTCPServerChannel(group: self.group) { server in
                 var channel: Channel? = nil
                 XCTAssertNoThrow(channel = try applyOptions(NIOClientTCPBootstrap(
                     ClientBootstrap(group: self.group), tls: NIOInsecureNoTLS()))
-                    .channelInitializer { channel in optionRead = channel.getOption(option)
+                    .channelInitializer { channel in
+                        channel.getOption(option).cascade(to: optionPromise)
                         return channel.eventLoop.makeSucceededFuture(())
                     }
                 .connect(to: server.localAddress!)
                 .wait())
-                XCTAssertNotNil(optionRead)
                 XCTAssertNotNil(channel)
                 XCTAssertNoThrow(try channel?.close().wait())
             })
-            return try optionRead!.wait()
+            return try optionPromise.futureResult.wait()
         }
         
         func checkOptionEquivalence<Option>(longOption: Option, setValue: Option.Value,

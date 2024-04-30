@@ -14,7 +14,7 @@
 
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(Linux) || os(Android)
 import NIOCore
-@_spi(Testing) import NIOFileSystem
+@_spi(Testing) import _NIOFileSystem
 @preconcurrency import SystemPackage
 import XCTest
 
@@ -256,6 +256,29 @@ final class FileSystemTests: XCTestCase {
             let bytes = try await ByteBuffer(contentsOf: path, maximumSizeAllowed: .megabytes(1))
             XCTAssertEqual(bytes, ByteBuffer(bytes: [0, 1, 2]))
         }
+    }
+
+    func testDetachUnsafeDescriptorForFileOpenedWithMaterialization() async throws {
+        let path = try await self.fs.temporaryFilePath()
+        let descriptor = try await self.fs.withFileHandle(forWritingAt: path) { handle in
+            _ = try await handle.withBufferedWriter { writer in
+                try await writer.write(contentsOf: repeatElement(0, count: 1024))
+            }
+
+            return try handle.detachUnsafeFileDescriptor()
+        }
+
+        try descriptor.writeAll(toAbsoluteOffset: 1024, repeatElement(1, count: 1024))
+
+        var buffer = try await ByteBuffer(
+            contentsOf: path,
+            maximumSizeAllowed: .mebibytes(2),
+            fileSystem: self.fs
+        )
+
+        XCTAssertEqual(buffer.readBytes(length: 1024), Array(repeating: 0, count: 1024))
+        XCTAssertEqual(buffer.readBytes(length: 1024), Array(repeating: 1, count: 1024))
+        XCTAssertEqual(buffer.readableBytes, 0)
     }
 
     func testOpenFileForReadingAndWriting() async throws {
@@ -562,6 +585,11 @@ final class FileSystemTests: XCTestCase {
     func testCopyLargeFile() async throws {
         let sourcePath = try await self.fs.temporaryFilePath()
         let destPath = try await self.fs.temporaryFilePath()
+        self.addTeardownBlock {
+            _ = try? await self.fs.removeItem(at: sourcePath)
+            _ = try? await self.fs.removeItem(at: destPath)
+        }
+
         let sourceInfo = try await self.fs.withFileHandle(
             forWritingAt: sourcePath,
             options: .newFile(replaceExisting: false)
@@ -1026,6 +1054,55 @@ final class FileSystemTests: XCTestCase {
 
             XCTAssertEqual(names.sorted(), expected.sorted())
         }
+    }
+
+    func testWithTemporaryDirectory() async throws {
+        let fs = FileSystem.shared
+
+        let createdPath = try await fs.withTemporaryDirectory { directory, path in
+            let root = try await fs.temporaryDirectory
+            XCTAssert(path.starts(with: root))
+            return path
+        }
+
+        // Directory shouldn't exist any more.
+        let info = try await fs.info(forFileAt: createdPath)
+        XCTAssertNil(info)
+    }
+
+    func testWithTemporaryDirectoryPrefix() async throws {
+        let fs = FileSystem.shared
+        let prefix = try await fs.currentWorkingDirectory
+
+        let createdPath = try await fs.withTemporaryDirectory(prefix: prefix) { directory, path in
+            XCTAssert(path.starts(with: prefix))
+            return path
+        }
+
+        // Directory shouldn't exist any more.
+        let info = try await fs.info(forFileAt: createdPath)
+        XCTAssertNil(info)
+    }
+
+    func testWithTemporaryDirectoryRemovesContents() async throws {
+        let fs = FileSystem.shared
+        let createdPath = try await fs.withTemporaryDirectory { directory, path in
+            for name in ["foo", "bar", "baz"] {
+                try await directory.withFileHandle(forWritingAt: FilePath(name)) { fh in
+                    _ = try await fh.write(contentsOf: [1, 2, 3], toAbsoluteOffset: 0)
+                }
+            }
+
+            let entries = try await directory.listContents().reduce(into: []) { $0.append($1) }
+            let names = entries.map { $0.name.string }
+            XCTAssertEqual(names.sorted(), ["bar", "baz", "foo"])
+
+            return path
+        }
+
+        // Directory shouldn't exist any more.
+        let info = try await fs.info(forFileAt: createdPath)
+        XCTAssertNil(info)
     }
 }
 
