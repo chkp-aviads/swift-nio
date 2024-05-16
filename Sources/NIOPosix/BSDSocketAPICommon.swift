@@ -67,28 +67,28 @@ extension NIOBSDSocket.SocketType {
     /// Supports datagrams, which are connectionless, unreliable messages of a
     /// fixed (typically small) maximum length.
     #if os(Linux) && !canImport(Musl)
-        internal static let datagram: NIOBSDSocket.SocketType =
+    public static let datagram: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: CInt(SOCK_DGRAM.rawValue))
     #else
-        internal static let datagram: NIOBSDSocket.SocketType =
+    public static let datagram: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: SOCK_DGRAM)
     #endif
 
     /// Supports reliable, two-way, connection-based byte streams without
     /// duplication of data and without preservation of boundaries.
     #if os(Linux) && !canImport(Musl)
-        internal static let stream: NIOBSDSocket.SocketType =
+    public static let stream: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: CInt(SOCK_STREAM.rawValue))
     #else
-        internal static let stream: NIOBSDSocket.SocketType =
+        public static let stream: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: SOCK_STREAM)
     #endif
 
     #if os(Linux) && !canImport(Musl)
-        internal static let raw: NIOBSDSocket.SocketType =
+    public static let raw: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: CInt(SOCK_RAW.rawValue))
     #else
-        internal static let raw: NIOBSDSocket.SocketType =
+    public static let raw: NIOBSDSocket.SocketType =
                 NIOBSDSocket.SocketType(rawValue: SOCK_RAW)
     #endif
 }
