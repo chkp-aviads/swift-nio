@@ -48,7 +48,7 @@ import struct WinSDK.SOCKADDR_IN6
 let offloadQueueTSV = ThreadSpecificVariable<DispatchQueue>()
 
 
-internal class GetaddrinfoResolver: Resolver {
+public class GetaddrinfoResolver: Resolver {
     private let v4Future: EventLoopPromise<[SocketAddress]>
     private let v6Future: EventLoopPromise<[SocketAddress]>
     private let aiSocktype: NIOBSDSocket.SocketType
@@ -60,7 +60,7 @@ internal class GetaddrinfoResolver: Resolver {
     ///     - loop: The `EventLoop` whose thread this resolver will block.
     ///     - aiSocktype: The sock type to use as hint when calling getaddrinfo.
     ///     - aiProtocol: the protocol to use as hint when calling getaddrinfo.
-    init(loop: EventLoop, aiSocktype: NIOBSDSocket.SocketType,
+    public init(loop: EventLoop, aiSocktype: NIOBSDSocket.SocketType,
          aiProtocol: NIOBSDSocket.OptionLevel) {
         self.v4Future = loop.makePromise()
         self.v6Future = loop.makePromise()
@@ -78,7 +78,7 @@ internal class GetaddrinfoResolver: Resolver {
     ///     - host: The hostname to do an A lookup on.
     ///     - port: The port we'll be connecting to.
     /// - returns: An `EventLoopFuture` that fires with the result of the lookup.
-    func initiateAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+    public func initiateAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
         return v4Future.futureResult
     }
 
@@ -91,7 +91,7 @@ internal class GetaddrinfoResolver: Resolver {
     ///     - host: The hostname to do an AAAA lookup on.
     ///     - port: The port we'll be connecting to.
     /// - returns: An `EventLoopFuture` that fires with the result of the lookup.
-    func initiateAAAAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+    public func initiateAAAAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
         self.offloadQueue().async {
             self.resolveBlocking(host: host, port: port)
         }
@@ -120,7 +120,7 @@ internal class GetaddrinfoResolver: Resolver {
     /// clean up their state.
     ///
     /// In the getaddrinfo case this is a no-op, as the resolver blocks.
-    func cancelQueries() { }
+    public func cancelQueries() { }
 
     /// Perform the DNS queries and record the result.
     ///

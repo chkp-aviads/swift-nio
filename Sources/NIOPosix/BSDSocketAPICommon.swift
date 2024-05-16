@@ -47,7 +47,7 @@ extension NIOBSDSocket {
 
 extension NIOBSDSocket {
     /// Specifies the type of socket.
-    internal struct SocketType: RawRepresentable {
+    public struct SocketType: RawRepresentable {
         public typealias RawValue = CInt
         public var rawValue: RawValue
         public init(rawValue: RawValue) {
