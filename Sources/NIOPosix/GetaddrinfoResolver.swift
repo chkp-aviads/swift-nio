@@ -11,6 +11,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+
+import Dispatch
 import NIOCore
 
 /// A DNS resolver built on top of the libc `getaddrinfo` function.
@@ -23,8 +25,6 @@ import NIOCore
 /// needed to implement it.
 ///
 /// This resolver is a single-use object: it can only be used to perform a single host resolution.
-
-import Dispatch
 
 #if os(Linux) || os(FreeBSD) || os(Android)
 import CNIOLinux
@@ -60,8 +60,11 @@ public class GetaddrinfoResolver: Resolver {
     ///     - loop: The `EventLoop` whose thread this resolver will block.
     ///     - aiSocktype: The sock type to use as hint when calling getaddrinfo.
     ///     - aiProtocol: the protocol to use as hint when calling getaddrinfo.
-    public init(loop: EventLoop, aiSocktype: NIOBSDSocket.SocketType,
-         aiProtocol: NIOBSDSocket.OptionLevel) {
+    public init(
+        loop: EventLoop,
+        aiSocktype: NIOBSDSocket.SocketType,
+        aiProtocol: NIOBSDSocket.OptionLevel
+    ) {
         self.v4Future = loop.makePromise()
         self.v6Future = loop.makePromise()
         self.aiSocktype = aiSocktype
@@ -120,7 +123,7 @@ public class GetaddrinfoResolver: Resolver {
     /// clean up their state.
     ///
     /// In the getaddrinfo case this is a no-op, as the resolver blocks.
-    public func cancelQueries() { }
+    public func cancelQueries() {}
 
     /// Perform the DNS queries and record the result.
     ///
@@ -128,7 +131,7 @@ public class GetaddrinfoResolver: Resolver {
     ///     - host: The hostname to do the DNS queries on.
     ///     - port: The port we'll be connecting to.
     private func resolveBlocking(host: String, port: Int) {
-#if os(Windows)
+        #if os(Windows)
         host.withCString(encodedAs: UTF16.self) { wszHost in
             String(port).withCString(encodedAs: UTF16.self) { wszPort in
                 var pResult: UnsafeMutablePointer<ADDRINFOW>?
@@ -151,7 +154,7 @@ public class GetaddrinfoResolver: Resolver {
                 }
             }
         }
-#else
+        #else
         var info: UnsafeMutablePointer<addrinfo>?
 
         var hint = addrinfo()
@@ -166,10 +169,10 @@ public class GetaddrinfoResolver: Resolver {
             self.parseAndPublishResults(info, host: host)
             freeaddrinfo(info)
         } else {
-            /* this is odd, getaddrinfo returned NULL */
+            // this is odd, getaddrinfo returned NULL
             self.fail(SocketAddressError.unsupported)
         }
-#endif
+        #endif
     }
 
     /// Parses the DNS results from the `addrinfo` linked list.
@@ -177,11 +180,11 @@ public class GetaddrinfoResolver: Resolver {
     /// - parameters:
     ///     - info: The pointer to the first of the `addrinfo` structures in the list.
     ///     - host: The hostname we resolved.
-#if os(Windows)
+    #if os(Windows)
     internal typealias CAddrInfo = ADDRINFOW
-#else
+    #else
     internal typealias CAddrInfo = addrinfo
-#endif
+    #endif
 
     private func parseAndPublishResults(_ info: UnsafeMutablePointer<CAddrInfo>, host: String) {
         var v4Results: [SocketAddress] = []
