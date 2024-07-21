@@ -22,8 +22,10 @@ import NIOPosix
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
+import CNIOLinux
 #elseif canImport(Musl)
 import Musl
+import CNIOLinux
 #endif
 
 /// An implementation of ``FileHandleProtocol`` which is backed by system calls and a file
@@ -153,7 +155,7 @@ extension SystemFileHandle.SendableView {
         }
     }
 
-    /// Executes a closure with the file descriptor it it's available otherwise throws the result
+    /// Executes a closure with the file descriptor if it's available otherwise throws the result
     /// of `onUnavailable`.
     internal func _withUnsafeDescriptor<R>(
         _ execute: (FileDescriptor) throws -> R,
@@ -166,8 +168,8 @@ extension SystemFileHandle.SendableView {
         }
     }
 
-    /// Executes a closure with the file descriptor it it's available otherwise throws the result
-    /// of `onUnavailable`.
+    /// Executes a closure with the file descriptor if it's available otherwise returns the result
+    /// of `onUnavailable` as a `Result` Error.
     internal func _withUnsafeDescriptorResult<R>(
         _ execute: (FileDescriptor) -> Result<R, FileSystemError>,
         onUnavailable: () -> FileSystemError
@@ -352,6 +354,18 @@ extension SystemFileHandle: FileHandleProtocol {
     public func close(makeChangesVisible: Bool) async throws {
         try await self.threadPool.runIfActive { [sendableView] in
             try sendableView._close(materialize: makeChangesVisible).get()
+        }
+    }
+
+    public func setTimes(
+        lastAccess: FileInfo.Timespec?,
+        lastDataModification: FileInfo.Timespec?
+    ) async throws {
+        try await self.threadPool.runIfActive { [sendableView] in
+            try sendableView._setTimes(
+                lastAccess: lastAccess,
+                lastDataModification: lastDataModification
+            )
         }
     }
 
@@ -650,7 +664,7 @@ extension SystemFileHandle.SendableView {
     }
 
     @_spi(Testing)
-    public func _close(materialize: Bool) -> Result<Void, FileSystemError> {
+    public func _close(materialize: Bool, failRenameat2WithEINVAL: Bool = false) -> Result<Void, FileSystemError> {
         let descriptor: FileDescriptor? = self.lifecycle.withLockedValue { lifecycle in
             switch lifecycle {
             case let .open(descriptor):
@@ -666,7 +680,7 @@ extension SystemFileHandle.SendableView {
         }
 
         // Materialize then close.
-        let materializeResult = self._materialize(materialize, descriptor: descriptor)
+        let materializeResult = self._materialize(materialize, descriptor: descriptor, failRenameat2WithEINVAL: failRenameat2WithEINVAL)
 
         return Result {
             try descriptor.close()
@@ -778,7 +792,8 @@ extension SystemFileHandle.SendableView {
 
     func _materialize(
         _ materialize: Bool,
-        descriptor: FileDescriptor
+        descriptor: FileDescriptor,
+        failRenameat2WithEINVAL: Bool
     ) -> Result<Void, FileSystemError> {
         guard let materialization = self.materialization else { return .success(()) }
 
@@ -803,8 +818,10 @@ extension SystemFileHandle.SendableView {
 
         case .rename:
             if materialize {
-                let renameResult: Result<Void, Errno>
+                var renameResult: Result<Void, Errno>
+                let renameFunction: String
                 #if canImport(Darwin)
+                renameFunction = "renamex_np"
                 renameResult = Syscall.rename(
                     from: createdPath,
                     to: desiredPath,
@@ -814,23 +831,82 @@ extension SystemFileHandle.SendableView {
                 // The created and desired paths are absolute, so the relative descriptors are
                 // ignored. However, they must still be provided to 'rename' in order to pass
                 // flags.
-                renameResult = Syscall.rename(
-                    from: createdPath,
-                    relativeTo: .currentWorkingDirectory,
-                    to: desiredPath,
-                    relativeTo: .currentWorkingDirectory,
-                    flags: materialization.exclusive ? [.exclusive] : []
-                )
+                renameFunction = "renameat2"
+                if materialization.exclusive, failRenameat2WithEINVAL {
+                    renameResult = .failure(.invalidArgument)
+                } else {
+                    renameResult = Syscall.rename(
+                        from: createdPath,
+                        relativeTo: .currentWorkingDirectory,
+                        to: desiredPath,
+                        relativeTo: .currentWorkingDirectory,
+                        flags: materialization.exclusive ? [.exclusive] : []
+                    )
+                }
                 #endif
 
-                // A file exists at the desired path and the user specified exclusive creation,
-                // clear up by removing the file we did create.
-                if materialization.exclusive, case .failure(.fileExists) = renameResult {
-                    _ = Libc.remove(createdPath)
+                if materialization.exclusive {
+                    switch renameResult {
+                    case .failure(.fileExists):
+                        // A file exists at the desired path and the user specified exclusive
+                        // creation, clear up by removing the file that we did create.
+                        _ = Libc.remove(createdPath)
+
+                    case .failure(.invalidArgument):
+                        // If 'renameat2' failed on Linux with EINVAL then in all likelihood the
+                        // 'RENAME_NOREPLACE' option isn't supported. As we're doing an exclusive
+                        // create, check the desired path doesn't exist then do a regular rename.
+                        #if canImport(Glibc) || canImport(Musl)
+                        switch Syscall.stat(path: desiredPath) {
+                        case .failure(.noSuchFileOrDirectory):
+                            // File doesn't exist, do a 'regular' rename.
+                            renameResult = Syscall.rename(from: createdPath, to: desiredPath)
+
+                        case .success:
+                            // File exists so exclusive create isn't possible. Remove the file
+                            // we did create then throw.
+                            _ = Libc.remove(createdPath)
+                            let error = FileSystemError(
+                                code: .fileAlreadyExists,
+                                message: """
+                                    Couldn't open '\(desiredPath)', it already exists and the \
+                                    file was opened with the 'existingFile' option set to 'none'.
+                                    """,
+                                cause: nil,
+                                location: .here()
+                            )
+                            return .failure(error)
+
+                        case .failure:
+                            // Failed to stat the desired file for reasons unknown. Remove the file
+                            // we did create then throw.
+                            _ = Libc.remove(createdPath)
+                            let error = FileSystemError(
+                                code: .unknown,
+                                message: "Couldn't open '\(desiredPath)'.",
+                                cause: FileSystemError.rename(
+                                    "renameat2",
+                                    errno: .invalidArgument,
+                                    oldName: createdPath,
+                                    newName: desiredPath,
+                                    location: .here()
+                                ),
+                                location: .here()
+                            )
+                            return .failure(error)
+                        }
+                        #else
+                        ()  // Not Linux, use the normal error flow.
+                        #endif
+
+                    case .success, .failure:
+                        ()
+                    }
                 }
 
                 result = renameResult.mapError { errno in
                     .rename(
+                        renameFunction,
                         errno: errno,
                         oldName: createdPath,
                         newName: desiredPath,
@@ -846,6 +922,84 @@ extension SystemFileHandle.SendableView {
         }
 
         return result
+    }
+
+    func _setTimes(
+        lastAccess: FileInfo.Timespec?,
+        lastDataModification: FileInfo.Timespec?
+    ) throws {
+        try self._withUnsafeDescriptor { descriptor in
+            let syscallResult: Result<Void, Errno>
+            switch (lastAccess, lastDataModification) {
+            case (.none, .none):
+                // If the timespec array is nil, as per the `futimens` docs,
+                // both the last accessed and last modification times
+                // will be set to now.
+                syscallResult = Syscall.futimens(
+                    fileDescriptor: descriptor,
+                    times: nil
+                )
+
+            case (.some(let lastAccess), .none):
+                // Don't modify the last modification time.
+                syscallResult = Syscall.futimens(
+                    fileDescriptor: descriptor,
+                    times: [timespec(lastAccess), timespec(.omit)]
+                )
+
+            case (.none, .some(let lastDataModification)):
+                // Don't modify the last access time.
+                syscallResult = Syscall.futimens(
+                    fileDescriptor: descriptor,
+                    times: [timespec(.omit), timespec(lastDataModification)]
+                )
+
+            case (.some(let lastAccess), .some(let lastDataModification)):
+                syscallResult = Syscall.futimens(
+                    fileDescriptor: descriptor,
+                    times: [timespec(lastAccess), timespec(lastDataModification)]
+                )
+            }
+
+            try syscallResult.mapError { errno in
+                FileSystemError.futimens(
+                    errno: errno,
+                    path: self.path,
+                    lastAccessTime: lastAccess,
+                    lastDataModificationTime: lastDataModification,
+                    location: .here()
+                )
+            }.get()
+        } onUnavailable: {
+            FileSystemError(
+                code: .closed,
+                message: "Couldn't modify file dates, the file '\(self.path)' is closed.",
+                cause: nil,
+                location: .here()
+            )
+        }
+    }
+}
+
+extension timespec {
+    fileprivate init(_ fileinfoTimespec: FileInfo.Timespec) {
+        // Clamp seconds to be positive
+        let seconds = max(0, fileinfoTimespec.seconds)
+
+        // If nanoseconds are not UTIME_NOW or UTIME_OMIT, clamp to be between
+        // 0 and 1,000 million.
+        let nanoseconds: Int
+        switch fileinfoTimespec {
+        case .now, .omit:
+            nanoseconds = fileinfoTimespec.nanoseconds
+        default:
+            nanoseconds = min(1_000_000_000, max(0, fileinfoTimespec.nanoseconds))
+        }
+
+        self.init(
+            tv_sec: seconds,
+            tv_nsec: nanoseconds
+        )
     }
 }
 
@@ -1234,7 +1388,8 @@ extension SystemFileHandle {
         }
     }
 
-    static func syncOpenWithMaterialization(
+    @_spi(Testing)
+    public static func syncOpenWithMaterialization(
         atPath path: FilePath,
         mode: FileDescriptor.AccessMode,
         options originalOptions: FileDescriptor.OpenOptions,

@@ -19,7 +19,7 @@ import NIOPosix
 import NIOFoundationCompat
 import XCTest
 
-@available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+@available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *)
 final class FileHandleTests: XCTestCase {
     static let thisFile = FilePath(#filePath)
     static let testData = FilePath(#filePath)
@@ -788,6 +788,30 @@ final class FileHandleTests: XCTestCase {
         }
     }
 
+    func testWriteByteBuffer() async throws {
+        try await withTemporaryFile { handle in
+            let someBytes = ByteBuffer(repeating: 42, count: 1024)
+            try await handle.write(contentsOf: someBytes, toAbsoluteOffset: 0)
+
+            let readSomeBytes = try await handle.readToEnd(maximumSizeAllowed: .bytes(1024))
+            XCTAssertEqual(readSomeBytes, someBytes)
+
+            let moreBytes = ByteBuffer(repeating: 13, count: 1024)
+            try await handle.write(contentsOf: moreBytes, toAbsoluteOffset: 512)
+
+            let readMoreBytes = try await handle.readToEnd(
+                fromAbsoluteOffset: 512,
+                maximumSizeAllowed: .bytes(1024)
+            )
+            XCTAssertEqual(readMoreBytes, moreBytes)
+
+            var allTheBytes = try await handle.readToEnd(maximumSizeAllowed: .bytes(1536))
+            let firstBytes = allTheBytes.readSlice(length: 512)!
+            XCTAssertTrue(firstBytes.readableBytesView.allSatisfy({ $0 == 42 }))
+            XCTAssertTrue(allTheBytes.readableBytesView.allSatisfy({ $0 == 13 }))
+        }
+    }
+
     func testWriteSequenceOfBytes() async throws {
         try await withTemporaryFile { handle in
             let byteSequence = UInt8(0)..<UInt8(64)
@@ -971,6 +995,55 @@ final class FileHandleTests: XCTestCase {
         }
     }
 
+    func testOpenExclusiveCreateForFileWhichExistsWithoutOTMPFILE() async throws {
+        // Takes the path where 'O_TMPFILE' doesn't exist, so materializing the file is done via
+        // creating a temporary file and then renaming it using 'renamex_np'/'renameat2' (Darwin/Linux).
+        let temporaryDirectory = try await FileSystem.shared.temporaryDirectory
+        let path = temporaryDirectory.appending(Self.temporaryFileName().components)
+        let handle = try SystemFileHandle.syncOpenWithMaterialization(
+            atPath: path,
+            mode: .writeOnly,
+            options: [.exclusiveCreate, .create],
+            permissions: .ownerReadWrite,
+            threadPool: .singleton,
+            useTemporaryFileIfPossible: false
+        ).get()
+
+        // Closing shouldn't throw and the file should now be visible.
+        try await handle.close()
+        let info = try await FileSystem.shared.info(forFileAt: path)
+        XCTAssertNotNil(info)
+    }
+
+    func testOpenExclusiveCreateForFileWhichExistsWithoutOTMPFILEOrRenameat2() async throws {
+        // Takes the path where 'O_TMPFILE' doesn't exist, so materializing the file is done via
+        // creating a temporary file and then renaming it using 'renameat2' and then takes a further
+        // fallback path where 'renameat2' returns EINVAL so the 'rename' is used in combination
+        // with 'stat'. This path is only reachable on Linux.
+        #if canImport(Glibc) || canImport(Musl)
+        let temporaryDirectory = try await FileSystem.shared.temporaryDirectory
+        let path = temporaryDirectory.appending(Self.temporaryFileName().components)
+        let handle = try SystemFileHandle.syncOpenWithMaterialization(
+            atPath: path,
+            mode: .writeOnly,
+            options: [.exclusiveCreate, .create],
+            permissions: .ownerReadWrite,
+            threadPool: .singleton,
+            useTemporaryFileIfPossible: false
+        ).get()
+
+        // Close, but take the path where 'renameat2' fails with EINVAL. This shouldn't throw and
+        // the file should be available.
+        let result = handle.sendableView._close(materialize: true, failRenameat2WithEINVAL: true)
+        try result.get()
+
+        let info = try await FileSystem.shared.info(forFileAt: path)
+        XCTAssertNotNil(info)
+        #else
+        throw XCTSkip("This test requires 'renameat2' which isn't supported on this platform")
+        #endif
+    }
+
     func testOpenExclusiveCreateForFileWhichDoesNotExist() async throws {
         try await self.withTestDataDirectory { dir in
             let path = Self.temporaryFileName()
@@ -1103,6 +1176,121 @@ final class FileHandleTests: XCTestCase {
             } onError: { error in
                 XCTAssertEqual(error.code, .invalidArgument)
             }
+        }
+    }
+
+    func testSetLastAccesTime() async throws {
+        try await self.withTemporaryFile { handle in
+            let originalLastDataModificationTime = try await handle.info().lastDataModificationTime
+            let originalLastAccessTime = try await handle.info().lastAccessTime
+
+            try await handle.setTimes(
+                lastAccess: FileInfo.Timespec(seconds: 10, nanoseconds: 5),
+                lastDataModification: nil
+            )
+
+            let actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(actualLastAccessTime, FileInfo.Timespec(seconds: 10, nanoseconds: 5))
+            XCTAssertNotEqual(actualLastAccessTime, originalLastAccessTime)
+
+            let actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(actualLastDataModificationTime, originalLastDataModificationTime)
+        }
+    }
+
+    func testSetLastDataModificationTime() async throws {
+        try await self.withTemporaryFile { handle in
+            let originalLastDataModificationTime = try await handle.info().lastDataModificationTime
+            let originalLastAccessTime = try await handle.info().lastAccessTime
+
+            try await handle.setTimes(
+                lastAccess: nil,
+                lastDataModification: FileInfo.Timespec(seconds: 10, nanoseconds: 5)
+            )
+
+            let actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(actualLastDataModificationTime, FileInfo.Timespec(seconds: 10, nanoseconds: 5))
+            XCTAssertNotEqual(actualLastDataModificationTime, originalLastDataModificationTime)
+
+            let actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(actualLastAccessTime, originalLastAccessTime)
+        }
+    }
+
+    func testSetLastAccessAndLastDataModificationTimes() async throws {
+        try await self.withTemporaryFile { handle in
+            let originalLastDataModificationTime = try await handle.info().lastDataModificationTime
+            let originalLastAccessTime = try await handle.info().lastAccessTime
+
+            try await handle.setTimes(
+                lastAccess: FileInfo.Timespec(seconds: 20, nanoseconds: 25),
+                lastDataModification: FileInfo.Timespec(seconds: 10, nanoseconds: 5)
+            )
+
+            let actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(actualLastAccessTime, FileInfo.Timespec(seconds: 20, nanoseconds: 25))
+            XCTAssertNotEqual(actualLastAccessTime, originalLastAccessTime)
+
+            let actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(actualLastDataModificationTime, FileInfo.Timespec(seconds: 10, nanoseconds: 5))
+            XCTAssertNotEqual(actualLastDataModificationTime, originalLastDataModificationTime)
+        }
+    }
+
+    func testSetLastAccessAndLastDataModificationTimesToNil() async throws {
+        try await self.withTemporaryFile { handle in
+            // Set some random value for both times, only to be overwritten by the current time
+            // right after.
+            try await handle.setTimes(
+                lastAccess: FileInfo.Timespec(seconds: 1, nanoseconds: 0),
+                lastDataModification: FileInfo.Timespec(seconds: 1, nanoseconds: 0)
+            )
+
+            var actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(actualLastAccessTime, FileInfo.Timespec(seconds: 1, nanoseconds: 0))
+
+            var actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(actualLastDataModificationTime, FileInfo.Timespec(seconds: 1, nanoseconds: 0))
+
+            try await handle.setTimes(
+                lastAccess: nil,
+                lastDataModification: nil
+            )
+            let estimatedCurrentTime = Date.now.timeIntervalSince1970
+
+            // Assert that the times are equal to the current time, with up to a second difference (to avoid timing flakiness).
+            actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(Float(actualLastAccessTime.seconds), Float(estimatedCurrentTime), accuracy: 1)
+
+            actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(Float(actualLastDataModificationTime.seconds), Float(estimatedCurrentTime), accuracy: 1)
+        }
+    }
+
+    func testTouchFile() async throws {
+        try await self.withTemporaryFile { handle in
+            // Set some random value for both times, only to be overwritten by the current time
+            // right after.
+            try await handle.setTimes(
+                lastAccess: FileInfo.Timespec(seconds: 1, nanoseconds: 0),
+                lastDataModification: FileInfo.Timespec(seconds: 1, nanoseconds: 0)
+            )
+
+            var actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(actualLastAccessTime, FileInfo.Timespec(seconds: 1, nanoseconds: 0))
+
+            var actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(actualLastDataModificationTime, FileInfo.Timespec(seconds: 1, nanoseconds: 0))
+
+            try await handle.touch()
+            let estimatedCurrentTime = Date.now.timeIntervalSince1970
+
+            // Assert that the times are equal to the current time, with up to a second difference (to avoid timing flakiness).
+            actualLastAccessTime = try await handle.info().lastAccessTime
+            XCTAssertEqual(Float(actualLastAccessTime.seconds), Float(estimatedCurrentTime), accuracy: 1)
+
+            actualLastDataModificationTime = try await handle.info().lastDataModificationTime
+            XCTAssertEqual(Float(actualLastDataModificationTime.seconds), Float(estimatedCurrentTime), accuracy: 1)
         }
     }
 }
