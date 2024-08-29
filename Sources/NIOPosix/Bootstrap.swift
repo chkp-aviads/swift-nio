@@ -981,7 +981,7 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
             host: host,
             port: port,
             connectTimeout: self.connectTimeout
-        ) { eventLoop, protocolFamily in
+        ) { eventLoop, protocolFamily, address in
             self.initializeAndRegisterNewChannel(eventLoop: eventLoop, protocolFamily: protocolFamily) {
                 $0.eventLoop.makeSucceededFuture(())
             }
@@ -1328,7 +1328,7 @@ extension ClientBootstrap {
             host: host,
             port: port,
             connectTimeout: self.connectTimeout
-        ) { eventLoop, protocolFamily in
+        ) { eventLoop, protocolFamily, address in
             self.initializeAndRegisterNewChannel(
                 eventLoop: eventLoop,
                 protocolFamily: protocolFamily,
