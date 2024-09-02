@@ -225,9 +225,9 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
     /// meaning that long channel setup times may cause more connections to be outstanding
     /// than intended.
     ///
-    /// The channel builder callback takes an event loop, protocol family and the result socket address as arguments.
+    /// The channel builder callback takes an event loop and a protocol family as arguments.
     private let channelBuilderCallback:
-    (EventLoop, NIOBSDSocket.ProtocolFamily, SocketAddress) -> EventLoopFuture<(Channel, ChannelBuilderResult)>
+        (EventLoop, NIOBSDSocket.ProtocolFamily) -> EventLoopFuture<(Channel, ChannelBuilderResult)>
 
     /// The amount of time to wait for an AAAA response to come in after a A response is
     /// received. By default this is 50ms.
@@ -286,7 +286,7 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
         connectTimeout: TimeAmount,
         resolutionDelay: TimeAmount = .milliseconds(50),
         connectionDelay: TimeAmount = .milliseconds(250),
-        channelBuilderCallback: @escaping (EventLoop, NIOBSDSocket.ProtocolFamily, SocketAddress) -> EventLoopFuture<
+        channelBuilderCallback: @escaping (EventLoop, NIOBSDSocket.ProtocolFamily) -> EventLoopFuture<
             (Channel, ChannelBuilderResult)
         >
     ) {
@@ -326,7 +326,7 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
         connectTimeout: TimeAmount,
         resolutionDelay: TimeAmount = .milliseconds(50),
         connectionDelay: TimeAmount = .milliseconds(250),
-        channelBuilderCallback: @escaping (EventLoop, NIOBSDSocket.ProtocolFamily, SocketAddress) -> EventLoopFuture<Channel>
+        channelBuilderCallback: @escaping (EventLoop, NIOBSDSocket.ProtocolFamily) -> EventLoopFuture<Channel>
     ) where ChannelBuilderResult == Void {
         self.init(
             resolver: resolver,
@@ -336,8 +336,8 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
             connectTimeout: connectTimeout,
             resolutionDelay: resolutionDelay,
             connectionDelay: connectionDelay
-        ) { loop, protocolFamily, socketAddress in
-            channelBuilderCallback(loop, protocolFamily, socketAddress).map { ($0, ()) }
+        ) { loop, protocolFamily in
+            channelBuilderCallback(loop, protocolFamily).map { ($0, ()) }
         }
     }
 
@@ -585,7 +585,7 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
     /// - parameters:
     ///     - target: The address to connect to.
     private func connectToTarget(_ target: SocketAddress) {
-        let channelFuture = channelBuilderCallback(self.loop, target.protocol, target)
+        let channelFuture = channelBuilderCallback(self.loop, target.protocol)
         pendingConnections.append(channelFuture)
 
         channelFuture.whenSuccess { (channel, result) in
