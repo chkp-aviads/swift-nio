@@ -18,8 +18,9 @@ extension EventLoopFuture {
     /// This function can be used to bridge an `EventLoopFuture` into the `async` world. Ie. if you're in an `async`
     /// function and want to get the result of this future.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+    @preconcurrency
     @inlinable
-    public func get() async throws -> Value {
+    public func get() async throws -> Value where Value: Sendable {
         try await withUnsafeThrowingContinuation { (cont: UnsafeContinuation<UnsafeTransfer<Value>, Error>) in
             self.whenComplete { result in
                 switch result {
@@ -33,6 +34,7 @@ extension EventLoopFuture {
     }
 }
 
+#if canImport(Dispatch)
 extension EventLoopGroup {
     /// Shuts down the event loop gracefully.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -49,6 +51,7 @@ extension EventLoopGroup {
         }
     }
 }
+#endif
 
 extension EventLoopPromise {
     /// Complete a future with the result (or error) of the `async` function `body`.
@@ -60,8 +63,11 @@ extension EventLoopPromise {
     /// - returns: A `Task` which was created to `await` the `body`.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
     @discardableResult
+    @preconcurrency
     @inlinable
-    public func completeWithTask(_ body: @escaping @Sendable () async throws -> Value) -> Task<Void, Never> {
+    public func completeWithTask(
+        _ body: @escaping @Sendable () async throws -> Value
+    ) -> Task<Void, Never> where Value: Sendable {
         Task {
             do {
                 let value = try await body()
@@ -240,8 +246,43 @@ extension ChannelPipeline {
     }
 }
 
-public struct NIOTooManyBytesError: Error, Hashable {
-    public init() {}
+/// An error that is thrown when the number of bytes in an AsyncSequence exceeds the limit.
+///
+/// When collecting the bytes from an AsyncSequence, there is a limit up to where the content
+/// exceeds a certain threshold beyond which the content isn't matching an expected reasonable
+/// size to be processed. This error is generally thrown when it is discovered that there are more
+/// more bytes in a sequence than what was specified as the maximum. It could be that this upTo
+/// limit should be increased, or that the sequence has unexpected content in it.
+public struct NIOTooManyBytesError: Error {
+    /// Current limit on the maximum number of bytes in the sequence
+    public var maxBytes: Int?
+
+    @available(
+        *,
+        deprecated,
+        message: "Construct the NIOTooManyBytesError with the maxBytes limit that triggered this error"
+    )
+    public init() {
+        self.maxBytes = nil
+    }
+
+    public init(maxBytes: Int) {
+        self.maxBytes = maxBytes
+    }
+}
+
+extension NIOTooManyBytesError: Equatable {
+    public static func == (lhs: NIOTooManyBytesError, rhs: NIOTooManyBytesError) -> Bool {
+        // Equality of the maxBytes isn't of consequence
+        true
+    }
+}
+
+extension NIOTooManyBytesError: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        // All errors of this type hash to the same value since maxBytes isn't of consequence
+        hasher.combine(7)
+    }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -262,7 +303,7 @@ extension AsyncSequence where Element: RandomAccessCollection, Element.Element =
         for try await fragment in self {
             bytesRead += fragment.count
             guard bytesRead <= maxBytes else {
-                throw NIOTooManyBytesError()
+                throw NIOTooManyBytesError(maxBytes: maxBytes)
             }
             accumulationBuffer.writeBytes(fragment)
         }
@@ -305,7 +346,7 @@ extension AsyncSequence where Element == ByteBuffer {
         for try await fragment in self {
             bytesRead += fragment.readableBytes
             guard bytesRead <= maxBytes else {
-                throw NIOTooManyBytesError()
+                throw NIOTooManyBytesError(maxBytes: maxBytes)
             }
             accumulationBuffer.writeImmutableBuffer(fragment)
         }
@@ -328,7 +369,7 @@ extension AsyncSequence where Element == ByteBuffer {
             return ByteBuffer()
         }
         guard head.readableBytes <= maxBytes else {
-            throw NIOTooManyBytesError()
+            throw NIOTooManyBytesError(maxBytes: maxBytes)
         }
 
         let tail = AsyncSequenceFromIterator(iterator)
@@ -359,8 +400,9 @@ struct AsyncSequenceFromIterator<AsyncIterator: AsyncIteratorProtocol>: AsyncSeq
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension EventLoop {
+    @preconcurrency
     @inlinable
-    public func makeFutureWithTask<Return>(
+    public func makeFutureWithTask<Return: Sendable>(
         _ body: @Sendable @escaping () async throws -> Return
     ) -> EventLoopFuture<Return> {
         let promise = self.makePromise(of: Return.self)

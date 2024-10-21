@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import Dispatch
+import NIOConcurrencyHelpers
 import NIOEmbedded
 import NIOPosix
 import XCTest
@@ -1408,18 +1409,19 @@ class EventLoopFutureTest: XCTestCase {
     func testWhenSuccessBlocking() {
         let eventLoop = EmbeddedEventLoop()
         let sem = DispatchSemaphore(value: 0)
-        var nonBlockingRan = false
+        let nonBlockingRan = NIOLockedValueBox(false)
         let p = eventLoop.makePromise(of: String.self)
         p.futureResult.whenSuccessBlocking(onto: DispatchQueue.global()) {
             sem.wait()  // Block in callback
             XCTAssertEqual($0, "hello")
-            XCTAssertTrue(nonBlockingRan)
+            nonBlockingRan.withLockedValue { XCTAssertTrue($0) }
+
         }
         p.succeed("hello")
 
         let p2 = eventLoop.makePromise(of: Bool.self)
         p2.futureResult.whenSuccess { _ in
-            nonBlockingRan = true
+            nonBlockingRan.withLockedValue { $0 = true }
         }
         p2.succeed(true)
 
@@ -1600,5 +1602,48 @@ class EventLoopFutureTest: XCTestCase {
         promise.setOrCascade(to: nil)
         XCTAssertNotNil(promise)
         promise?.succeed()
+    }
+
+    func testPromiseEquatable() {
+        let eventLoop = EmbeddedEventLoop()
+
+        let promise1 = eventLoop.makePromise(of: Void.self)
+        let promise2 = eventLoop.makePromise(of: Void.self)
+        let promise3 = promise1
+        XCTAssertEqual(promise1, promise3)
+        XCTAssertNotEqual(promise1, promise2)
+        XCTAssertNotEqual(promise3, promise2)
+
+        promise1.succeed()
+        promise2.succeed()
+    }
+
+    func testPromiseEquatable_WhenSucceeded() {
+        let eventLoop = EmbeddedEventLoop()
+
+        let promise1 = eventLoop.makePromise(of: Void.self)
+        let promise2 = eventLoop.makePromise(of: Void.self)
+        let promise3 = promise1
+
+        promise1.succeed()
+        promise2.succeed()
+        XCTAssertEqual(promise1, promise3)
+        XCTAssertNotEqual(promise1, promise2)
+        XCTAssertNotEqual(promise3, promise2)
+    }
+
+    func testPromiseEquatable_WhenFailed() {
+        struct E: Error {}
+        let eventLoop = EmbeddedEventLoop()
+
+        let promise1 = eventLoop.makePromise(of: Void.self)
+        let promise2 = eventLoop.makePromise(of: Void.self)
+        let promise3 = promise1
+
+        promise1.fail(E())
+        promise2.fail(E())
+        XCTAssertEqual(promise1, promise3)
+        XCTAssertNotEqual(promise1, promise2)
+        XCTAssertNotEqual(promise3, promise2)
     }
 }

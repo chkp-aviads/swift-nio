@@ -15,14 +15,12 @@
 import Atomics
 import NIOCore
 
-#if compiler(>=5.9)
 private protocol SilenceWarning {
     @available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *)
     func enqueue(_ job: UnownedJob)
 }
 @available(macOS 14, *)
 extension SelectableEventLoop: SilenceWarning {}
-#endif
 
 private let _haveWeTakenOverTheConcurrencyPool = ManagedAtomic(false)
 extension NIOSingletons {
@@ -42,7 +40,7 @@ extension NIOSingletons {
     @discardableResult
     public static func unsafeTryInstallSingletonPosixEventLoopGroupAsConcurrencyGlobalExecutor() -> Bool {
         // Guard between the minimum and maximum supported version for the hook
-        #if compiler(>=5.9) && compiler(<6.1)
+        #if compiler(>=5.9) && compiler(<6.2)
         guard #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) else {
             return false
         }
@@ -73,7 +71,7 @@ extension NIOSingletons {
         let concurrencyEnqueueGlobalHookPtr = dlsym(
             dlopen(nil, RTLD_NOW),
             "swift_task_enqueueGlobal_hook"
-        )?.assumingMemoryBound(to: UnsafeRawPointer?.AtomicRepresentation.self)
+        )?.assumingMemoryBound(to: UnsafeRawPointer?.AtomicRep.self)
         guard let concurrencyEnqueueGlobalHookPtr = concurrencyEnqueueGlobalHookPtr else {
             return false
         }
@@ -125,4 +123,13 @@ extension NIOSingletons {
         return false
         #endif
     }
+}
+
+// Workaround for https://github.com/apple/swift-nio/issues/2893
+extension Optional
+where
+    Wrapped: AtomicOptionalWrappable,
+    Wrapped.AtomicRepresentation.Value == Wrapped
+{
+    typealias AtomicRep = Wrapped.AtomicOptionalRepresentation
 }

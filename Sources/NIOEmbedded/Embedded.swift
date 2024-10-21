@@ -14,10 +14,13 @@
 
 import Atomics
 import DequeModule
-import Dispatch
 import NIOConcurrencyHelpers
 import NIOCore
 import _NIODataStructures
+
+#if canImport(Dispatch)
+import Dispatch
+#endif
 
 internal struct EmbeddedScheduledTask {
     let id: UInt64
@@ -76,9 +79,12 @@ extension EmbeddedScheduledTask: Comparable {
 ///     is because it is intended to be run in the thread that instantiated it. Users are
 ///     responsible for ensuring they never call into the `EmbeddedEventLoop` in an
 ///     unsynchronized fashion.
-public final class EmbeddedEventLoop: EventLoop {
+public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
     /// The current "time" for this event loop. This is an amount in nanoseconds.
     internal var _now: NIODeadline = .uptimeNanoseconds(0)
+
+    private enum State { case open, closing, closed }
+    private var state: State = .open
 
     private var scheduledTaskCounter: UInt64 = 0
     private var scheduledTasks = PriorityQueue<EmbeddedScheduledTask>()
@@ -90,6 +96,8 @@ public final class EmbeddedEventLoop: EventLoop {
     // scheduled at the same time, we may do so in the order in which they were submitted for
     // execution.
     private var taskNumber: UInt64 = 0
+
+    public let description = "EmbeddedEventLoop"
 
     private func nextTaskNumber() -> UInt64 {
         defer {
@@ -110,6 +118,16 @@ public final class EmbeddedEventLoop: EventLoop {
     @discardableResult
     public func scheduleTask<T>(deadline: NIODeadline, _ task: @escaping () throws -> T) -> Scheduled<T> {
         let promise: EventLoopPromise<T> = makePromise()
+
+        switch self.state {
+        case .open:
+            break
+        case .closing, .closed:
+            // If the event loop is shut down, or shutting down, immediately cancel the task.
+            promise.fail(EventLoopError.cancelled)
+            return Scheduled(promise: promise, cancellationTask: {})
+        }
+
         self.scheduledTaskCounter += 1
         let task = EmbeddedScheduledTask(
             id: self.scheduledTaskCounter,
@@ -140,6 +158,18 @@ public final class EmbeddedEventLoop: EventLoop {
     @discardableResult
     public func scheduleTask<T>(in: TimeAmount, _ task: @escaping () throws -> T) -> Scheduled<T> {
         scheduleTask(deadline: self._now + `in`, task)
+    }
+
+    @preconcurrency
+    @discardableResult
+    public func scheduleCallback(
+        in amount: TimeAmount,
+        handler: some (NIOScheduledCallbackHandler & Sendable)
+    ) -> NIOScheduledCallback {
+        /// Even though this type does not implement a custom `scheduleCallback(at:handler)`, it uses a manual clock so
+        /// it cannot rely on the default implementation of `scheduleCallback(in:handler:)`, which computes the deadline
+        /// as an offset from `NIODeadline.now`. This event loop needs the deadline to be offset from `self._now`.
+        self.scheduleCallback(at: self._now + amount, handler: handler)
     }
 
     /// On an `EmbeddedEventLoop`, `execute` will simply use `scheduleTask` with a deadline of _now_. This means that
@@ -197,32 +227,24 @@ public final class EmbeddedEventLoop: EventLoop {
         self._now = newTime
     }
 
-    internal func drainScheduledTasksByRunningAllCurrentlyScheduledTasks() {
-        var currentlyScheduledTasks = self.scheduledTasks
-        while let nextTask = currentlyScheduledTasks.pop() {
-            self._now = nextTask.readyTime
-            nextTask.task()
-        }
-        // Just fail all the remaining scheduled tasks. Despite having run all the tasks that were
-        // scheduled when we entered the method this may still contain tasks as running the tasks
-        // may have enqueued more tasks.
+    internal func cancelRemainingScheduledTasks() {
         while let task = self.scheduledTasks.pop() {
-            task.fail(EventLoopError.shutdown)
+            task.fail(EventLoopError.cancelled)
         }
     }
 
-    /// - see: `EventLoop.close`
-    func close() throws {
-        // Nothing to do here
-    }
-
+    #if canImport(Dispatch)
     /// - see: `EventLoop.shutdownGracefully`
     public func shutdownGracefully(queue: DispatchQueue, _ callback: @escaping (Error?) -> Void) {
+        self.state = .closing
         run()
+        cancelRemainingScheduledTasks()
+        self.state = .closed
         queue.sync {
             callback(nil)
         }
     }
+    #endif
 
     public func _preconditionSafeToWait(file: StaticString, line: UInt) {
         // EmbeddedEventLoop always allows a wait, as waiting will essentially always block
@@ -250,14 +272,12 @@ public final class EmbeddedEventLoop: EventLoop {
         precondition(scheduledTasks.isEmpty, "Embedded event loop freed with unexecuted scheduled tasks!")
     }
 
-    #if compiler(>=5.9)
     @available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *)
     public var executor: any SerialExecutor {
         fatalError(
             "EmbeddedEventLoop is not thread safe and cannot be used as a SerialExecutor. Use NIOAsyncTestingEventLoop instead."
         )
     }
-    #endif
 }
 
 @usableFromInline
@@ -640,8 +660,8 @@ public final class EmbeddedChannel: Channel {
                 throw error
             }
         }
-        self.embeddedEventLoop.drainScheduledTasksByRunningAllCurrentlyScheduledTasks()
         self.embeddedEventLoop.run()
+        self.embeddedEventLoop.cancelRemainingScheduledTasks()
         try throwIfErrorCaught()
         let c = self.channelcore
         if c.outboundBuffer.isEmpty && c.inboundBuffer.isEmpty && c.pendingOutboundBuffer.isEmpty {
@@ -854,6 +874,14 @@ public final class EmbeddedChannel: Channel {
         }
         if option is ChannelOptions.Types.AllowRemoteHalfClosureOption {
             return self.allowRemoteHalfClosure as! Option.Value
+        }
+        if option is ChannelOptions.Types.BufferedWritableBytesOption {
+            let result = self.channelcore.pendingOutboundBuffer.reduce(0) { partialResult, dataAndPromise in
+                let buffer = self.channelcore.unwrapData(dataAndPromise.0, as: ByteBuffer.self)
+                return partialResult + buffer.readableBytes
+            }
+
+            return result as! Option.Value
         }
         fatalError("option \(option) not supported")
     }

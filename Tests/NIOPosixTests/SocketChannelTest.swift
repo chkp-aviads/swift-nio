@@ -62,12 +62,12 @@ public final class SocketChannelTest: XCTestCase {
         let futureA = channelA.eventLoop.submit {
             condition.wrappingIncrement(ordering: .relaxed)
             while condition.load(ordering: .relaxed) < 2 {}
-            _ = channelB.setOption(ChannelOptions.backlog, value: 1)
+            _ = channelB.setOption(.backlog, value: 1)
         }
         let futureB = channelB.eventLoop.submit {
             condition.wrappingIncrement(ordering: .relaxed)
             while condition.load(ordering: .relaxed) < 2 {}
-            _ = channelA.setOption(ChannelOptions.backlog, value: 1)
+            _ = channelA.setOption(.backlog, value: 1)
         }
         try futureA.wait()
         try futureB.wait()
@@ -79,8 +79,8 @@ public final class SocketChannelTest: XCTestCase {
 
         let serverChannel = try assertNoThrowWithValue(
             ServerBootstrap(group: group)
-                .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelOption(ChannelOptions.backlog, value: 256)
+                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .serverChannelOption(.backlog, value: 256)
                 .bind(host: "127.0.0.1", port: 0).wait()
         )
 
@@ -212,14 +212,14 @@ public final class SocketChannelTest: XCTestCase {
         XCTAssertNoThrow(
             try assertSetGetOptionOnOpenAndClosed(
                 channel: clientChannel,
-                option: ChannelOptions.allowRemoteHalfClosure,
+                option: .allowRemoteHalfClosure,
                 value: true
             )
         )
         XCTAssertNoThrow(
             try assertSetGetOptionOnOpenAndClosed(
                 channel: serverChannel,
-                option: ChannelOptions.backlog,
+                option: .backlog,
                 value: 100
             )
         )
@@ -611,7 +611,8 @@ public final class SocketChannelTest: XCTestCase {
         #if !os(Linux) && !os(Android)
         // This test checks that we correctly fail with an error rather than
         // asserting or silently ignoring if a client aborts the connection
-        // early with a RST during or immediately after accept().
+        // early with a RST before accept(). The behaviour is the same as closing the socket
+        // during the accept. But it is easier to test closing the socket before the accept, than during it.
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer { XCTAssertNoThrow(try group.syncShutdownGracefully()) }
 
@@ -644,9 +645,9 @@ public final class SocketChannelTest: XCTestCase {
         let serverPromise = group.next().makePromise(of: IOError.self)
         let serverChannel = try assertNoThrowWithValue(
             ServerBootstrap(group: group)
-                .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelOption(ChannelOptions.backlog, value: 256)
-                .serverChannelOption(ChannelOptions.autoRead, value: false)
+                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .serverChannelOption(.backlog, value: 256)
+                .serverChannelOption(.autoRead, value: false)
                 .serverChannelInitializer { channel in channel.pipeline.addHandler(ErrorHandler(serverPromise)) }
                 .bind(host: "127.0.0.1", port: 0)
                 .wait()
@@ -660,8 +661,13 @@ public final class SocketChannelTest: XCTestCase {
         XCTAssertNoThrow(try clientSocket.connect(to: serverChannel.localAddress!))
         XCTAssertNoThrow(try clientSocket.close())
 
-        // Trigger accept() in the server
-        serverChannel.read()
+        // We wait here to allow slow machines to close the socket
+        // We want to ensure the socket is closed before we trigger accept
+        // That will trigger the error that we want to test for
+        group.any().scheduleTask(in: .seconds(1)) {
+            // Trigger accept() in the server
+            serverChannel.read()
+        }
 
         // Wait for the server to have something
         XCTAssertThrowsError(try serverPromise.futureResult.wait()) { error in
@@ -798,8 +804,8 @@ public final class SocketChannelTest: XCTestCase {
                 group: group
             )
         )
-        XCTAssertNoThrow(try serverChan.setOption(ChannelOptions.maxMessagesPerRead, value: 1).wait())
-        XCTAssertNoThrow(try serverChan.setOption(ChannelOptions.autoRead, value: false).wait())
+        XCTAssertNoThrow(try serverChan.setOption(.maxMessagesPerRead, value: 1).wait())
+        XCTAssertNoThrow(try serverChan.setOption(.autoRead, value: false).wait())
         XCTAssertNoThrow(try serverChan.register().wait())
         XCTAssertNoThrow(try serverChan.bind(to: .init(ipAddress: "127.0.0.1", port: 0)).wait())
 
@@ -862,7 +868,7 @@ public final class SocketChannelTest: XCTestCase {
             var numberOfAcceptedChannels = 0
             let server = try assertNoThrowWithValue(
                 ServerBootstrap(group: group)
-                    .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: mode == .halfClosureEnabled)
+                    .childChannelOption(.allowRemoteHalfClosure, value: mode == .halfClosureEnabled)
                     .childChannelInitializer { channel in
                         numberOfAcceptedChannels += 1
                         XCTAssertEqual(1, numberOfAcceptedChannels)
@@ -941,7 +947,7 @@ public final class SocketChannelTest: XCTestCase {
             )
             let client = try assertNoThrowWithValue(
                 ClientBootstrap(group: group)
-                    .channelOption(ChannelOptions.allowRemoteHalfClosure, value: mode == .halfClosureEnabled)
+                    .channelOption(.allowRemoteHalfClosure, value: mode == .halfClosureEnabled)
                     .channelInitializer { channel in
                         channel.pipeline.addHandlers([
                             eventCounter,

@@ -21,6 +21,13 @@ import WinSDK
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif canImport(Bionic)
+import Bionic
+#elseif canImport(WASILibc)
+import WASILibc
+#if canImport(wasi_pthread)
+import wasi_pthread
+#endif
 #else
 #error("The concurrency NIOLock module was unable to identify your C library.")
 #endif
@@ -43,7 +50,7 @@ extension LockOperations {
 
         #if os(Windows)
         InitializeSRWLock(mutex)
-        #else
+        #elseif (compiler(<6.1) && !os(WASI)) || (compiler(>=6.1) && _runtime(_multithreaded))
         var attr = pthread_mutexattr_t()
         pthread_mutexattr_init(&attr)
         debugOnly {
@@ -61,7 +68,7 @@ extension LockOperations {
 
         #if os(Windows)
         // SRWLOCK does not need to be free'd
-        #else
+        #elseif (compiler(<6.1) && !os(WASI)) || (compiler(>=6.1) && _runtime(_multithreaded))
         let err = pthread_mutex_destroy(mutex)
         precondition(err == 0, "\(#function) failed in pthread_mutex with error \(err)")
         #endif
@@ -73,7 +80,7 @@ extension LockOperations {
 
         #if os(Windows)
         AcquireSRWLockExclusive(mutex)
-        #else
+        #elseif (compiler(<6.1) && !os(WASI)) || (compiler(>=6.1) && _runtime(_multithreaded))
         let err = pthread_mutex_lock(mutex)
         precondition(err == 0, "\(#function) failed in pthread_mutex with error \(err)")
         #endif
@@ -85,7 +92,7 @@ extension LockOperations {
 
         #if os(Windows)
         ReleaseSRWLockExclusive(mutex)
-        #else
+        #elseif (compiler(<6.1) && !os(WASI)) || (compiler(>=6.1) && _runtime(_multithreaded))
         let err = pthread_mutex_unlock(mutex)
         precondition(err == 0, "\(#function) failed in pthread_mutex with error \(err)")
         #endif
@@ -128,7 +135,10 @@ final class LockStorage<Value>: ManagedBuffer<Value, LockPrimitive> {
         let buffer = Self.create(minimumCapacity: 1) { _ in
             value
         }
-        let storage = unsafeDowncast(buffer, to: Self.self)
+        // Intentionally using a force cast here to avoid a miss compiliation in 5.10.
+        // This is as fast as an unsafeDownCast since ManagedBuffer is inlined and the optimizer
+        // can eliminate the upcast/downcast pair
+        let storage = buffer as! Self
 
         storage.withUnsafeMutablePointers { _, lockPtr in
             LockOperations.create(lockPtr)

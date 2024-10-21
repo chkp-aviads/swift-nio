@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if canImport(Dispatch)
 import Atomics
 import Dispatch
 import NIOConcurrencyHelpers
@@ -95,6 +96,9 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
     /// The queue on which we run all our operations.
     private let queue = DispatchQueue(label: "io.swiftnio.AsyncEmbeddedEventLoop")
 
+    private enum State: Int, AtomicValue { case open, closing, closed }
+    private let state = ManagedAtomic(State.open)
+
     // This function must only be called on queue.
     private func nextTaskNumber() -> UInt64 {
         dispatchPrecondition(condition: .onQueue(self.queue))
@@ -150,6 +154,15 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
         let promise: EventLoopPromise<T> = self.makePromise()
         let taskID = self.scheduledTaskCounter.loadThenWrappingIncrement(ordering: .relaxed)
 
+        switch self.state.load(ordering: .acquiring) {
+        case .open:
+            break
+        case .closing, .closed:
+            // If the event loop is shut down, or shutting down, immediately cancel the task.
+            promise.fail(EventLoopError.cancelled)
+            return Scheduled(promise: promise, cancellationTask: {})
+        }
+
         let scheduled = Scheduled(
             promise: promise,
             cancellationTask: {
@@ -179,6 +192,40 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
         self.scheduleTask(deadline: self.now + `in`, task)
     }
 
+    @preconcurrency
+    public func scheduleCallback(
+        at deadline: NIODeadline,
+        handler: some (NIOScheduledCallbackHandler & Sendable)
+    ) throws -> NIOScheduledCallback {
+        /// The default implementation of `scheduledCallback(at:handler)` makes two calls to the event loop because it
+        /// needs to hook the future of the backing scheduled task, which can lead to lost cancellation callbacks when
+        /// callbacks are scheduled close to event loop shutdown.
+        ///
+        /// We work around this here by using a blocking `wait()` if we are not on the event loop, which would be very
+        /// bad in areal event loop, but _less bad_ for testing.
+        ///
+        /// For more details, see the documentation attached to the default implementation.
+        if self.inEventLoop {
+            return self._scheduleCallback(at: deadline, handler: handler)
+        } else {
+            return try self.submit {
+                self._scheduleCallback(at: deadline, handler: handler)
+            }.wait()
+        }
+    }
+
+    @preconcurrency
+    @discardableResult
+    public func scheduleCallback(
+        in amount: TimeAmount,
+        handler: some (NIOScheduledCallbackHandler & Sendable)
+    ) throws -> NIOScheduledCallback {
+        /// Even though this type does not implement a custom `scheduleCallback(at:handler)`, it uses a manual clock so
+        /// it cannot rely on the default implementation of `scheduleCallback(in:handler:)`, which computes the deadline
+        /// as an offset from `NIODeadline.now`. This event loop needs the deadline to be offset from `self.now`.
+        try self.scheduleCallback(at: self.now + amount, handler: handler)
+    }
+
     /// On an `NIOAsyncTestingEventLoop`, `execute` will simply use `scheduleTask` with a deadline of _now_. Unlike with the other operations, this will
     /// immediately execute, to eliminate a common class of bugs.
     public func execute(_ task: @escaping () -> Void) {
@@ -187,27 +234,7 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
         } else {
             self.queue.async {
                 self.scheduleTask(deadline: self.now, task)
-
-                var tasks = CircularBuffer<EmbeddedScheduledTask>()
-                while let nextTask = self.scheduledTasks.peek() {
-                    guard nextTask.readyTime <= self.now else {
-                        break
-                    }
-
-                    // Now we want to grab all tasks that are ready to execute at the same
-                    // time as the first.
-                    while let candidateTask = self.scheduledTasks.peek(), candidateTask.readyTime == nextTask.readyTime
-                    {
-                        tasks.append(candidateTask)
-                        self.scheduledTasks.pop()
-                    }
-
-                    for task in tasks {
-                        task.task()
-                    }
-
-                    tasks.removeAll(keepingCapacity: true)
-                }
+                self._run()
             }
         }
     }
@@ -233,41 +260,50 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
     ///
     /// - Note: If `deadline` is before the current time, the current time will not be advanced.
     public func advanceTime(to deadline: NIODeadline) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        await withCheckedContinuation { continuation in
             self.queue.async {
-                let newTime = max(deadline, self.now)
-
-                var tasks = CircularBuffer<EmbeddedScheduledTask>()
-                while let nextTask = self.scheduledTasks.peek() {
-                    guard nextTask.readyTime <= newTime else {
-                        break
-                    }
-
-                    // Now we want to grab all tasks that are ready to execute at the same
-                    // time as the first.
-                    while let candidateTask = self.scheduledTasks.peek(), candidateTask.readyTime == nextTask.readyTime
-                    {
-                        tasks.append(candidateTask)
-                        self.scheduledTasks.pop()
-                    }
-
-                    // Set the time correctly before we call into user code, then
-                    // call in for all tasks.
-                    self._now.store(nextTask.readyTime.uptimeNanoseconds, ordering: .relaxed)
-
-                    for task in tasks {
-                        task.task()
-                    }
-
-                    tasks.removeAll(keepingCapacity: true)
-                }
-
-                // Finally ensure we got the time right.
-                self._now.store(newTime.uptimeNanoseconds, ordering: .relaxed)
-
+                self._advanceTime(to: deadline)
                 continuation.resume()
             }
         }
+    }
+
+    internal func _advanceTime(to deadline: NIODeadline) {
+        dispatchPrecondition(condition: .onQueue(self.queue))
+
+        let newTime = max(deadline, self.now)
+
+        var tasks = CircularBuffer<EmbeddedScheduledTask>()
+        while let nextTask = self.scheduledTasks.peek() {
+            guard nextTask.readyTime <= newTime else {
+                break
+            }
+
+            // Now we want to grab all tasks that are ready to execute at the same
+            // time as the first.
+            while let candidateTask = self.scheduledTasks.peek(), candidateTask.readyTime == nextTask.readyTime {
+                tasks.append(candidateTask)
+                self.scheduledTasks.pop()
+            }
+
+            // Set the time correctly before we call into user code, then
+            // call in for all tasks.
+            self._now.store(nextTask.readyTime.uptimeNanoseconds, ordering: .relaxed)
+
+            for task in tasks {
+                task.task()
+            }
+
+            tasks.removeAll(keepingCapacity: true)
+        }
+
+        // Finally ensure we got the time right.
+        self._now.store(newTime.uptimeNanoseconds, ordering: .relaxed)
+    }
+
+    internal func _run() {
+        dispatchPrecondition(condition: .onQueue(self.queue))
+        self._advanceTime(to: self.now)
     }
 
     /// Executes the given function in the context of this event loop. This is useful when it's necessary to be confident that an operation
@@ -293,6 +329,13 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
         }
     }
 
+    internal func _cancelRemainingScheduledTasks() {
+        dispatchPrecondition(condition: .onQueue(self.queue))
+        while let task = self.scheduledTasks.pop() {
+            task.fail(EventLoopError.cancelled)
+        }
+    }
+
     internal func drainScheduledTasksByRunningAllCurrentlyScheduledTasks() {
         var currentlyScheduledTasks = self.scheduledTasks
         while let nextTask = currentlyScheduledTasks.pop() {
@@ -309,7 +352,8 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
 
     private func _shutdownGracefully() {
         dispatchPrecondition(condition: .onQueue(self.queue))
-        self.drainScheduledTasksByRunningAllCurrentlyScheduledTasks()
+        self._run()
+        self._cancelRemainingScheduledTasks()
     }
 
     /// - see: `EventLoop.shutdownGracefully`
@@ -324,9 +368,11 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
 
     /// The concurrency-aware equivalent of `shutdownGracefully(queue:_:)`.
     public func shutdownGracefully() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        await withCheckedContinuation { continuation in
+            self.state.store(.closing, ordering: .releasing)
             self.queue.async {
                 self._shutdownGracefully()
+                self.state.store(.closed, ordering: .releasing)
                 continuation.resume()
             }
         }
@@ -363,10 +409,8 @@ public final class NIOAsyncTestingEventLoop: EventLoop, @unchecked Sendable {
 }
 
 // MARK: SerialExecutor conformance
-#if compiler(>=5.9)
 @available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *)
 extension NIOAsyncTestingEventLoop: NIOSerialEventLoopExecutor {}
-#endif
 
 /// This is a thread-safe promise creation store.
 ///
@@ -394,3 +438,4 @@ private class PromiseCreationStore {
         precondition(self.promiseCreationStore.isEmpty, "NIOAsyncTestingEventLoop freed with uncompleted promises!")
     }
 }
+#endif

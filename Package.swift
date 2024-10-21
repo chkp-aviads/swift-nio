@@ -1,4 +1,4 @@
-// swift-tools-version:5.8
+// swift-tools-version:5.9
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the SwiftNIO open source project
@@ -15,6 +15,10 @@
 
 import PackageDescription
 
+// Used only for environment variables, does not make its way
+// into the product code.
+import class Foundation.ProcessInfo
+
 let swiftAtomics: PackageDescription.Target.Dependency = .product(name: "Atomics", package: "swift-atomics")
 let swiftCollections: PackageDescription.Target.Dependency = .product(name: "DequeModule", package: "swift-collections")
 let swiftSystem: PackageDescription.Target.Dependency = .product(
@@ -22,6 +26,28 @@ let swiftSystem: PackageDescription.Target.Dependency = .product(
     package: "swift-system",
     condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .linux, .android])
 )
+
+// These platforms require a depdency on `NIOPosix` from `NIOHTTP1` to maintain backward
+// compatibility with previous NIO versions.
+let historicalNIOPosixDependencyRequired: [Platform] = [.macOS, .iOS, .tvOS, .watchOS, .linux, .android]
+
+let strictConcurrencyDevelopment = false
+
+let strictConcurrencySettings: [SwiftSetting] = {
+    var initialSettings: [SwiftSetting] = []
+    initialSettings.append(contentsOf: [
+        .enableUpcomingFeature("StrictConcurrency"),
+        .enableUpcomingFeature("InferSendableFromCaptures"),
+    ])
+
+    if strictConcurrencyDevelopment {
+        // -warnings-as-errors here is a workaround so that IDE-based development can
+        // get tripped up on -require-explicit-sendable.
+        initialSettings.append(.unsafeFlags(["-require-explicit-sendable", "-warnings-as-errors"]))
+    }
+
+    return initialSettings
+}()
 
 // This doesn't work when cross-compiling: the privacy manifest will be included in the Bundle and
 // Foundation will be linked. This is, however, strictly better than unconditionally adding the
@@ -60,16 +86,19 @@ let package = Package(
                 "CNIODarwin",
                 "CNIOLinux",
                 "CNIOWindows",
+                "CNIOWASI",
                 "_NIODataStructures",
                 swiftCollections,
                 swiftAtomics,
             ]
         ),
         .target(
-            name: "_NIODataStructures"
+            name: "_NIODataStructures",
+            swiftSettings: strictConcurrencySettings
         ),
         .target(
-            name: "_NIOBase64"
+            name: "_NIOBase64",
+            swiftSettings: strictConcurrencySettings
         ),
         .target(
             name: "NIOEmbedded",
@@ -106,14 +135,14 @@ let package = Package(
         .target(
             name: "_NIOConcurrency",
             dependencies: [
-                "NIO",
+                .target(name: "NIO", condition: .when(platforms: historicalNIOPosixDependencyRequired)),
                 "NIOCore",
             ]
         ),
         .target(
             name: "NIOFoundationCompat",
             dependencies: [
-                "NIO",
+                .target(name: "NIO", condition: .when(platforms: historicalNIOPosixDependencyRequired)),
                 "NIOCore",
             ]
         ),
@@ -147,15 +176,20 @@ let package = Package(
             dependencies: []
         ),
         .target(
+            name: "CNIOWASI",
+            dependencies: []
+        ),
+        .target(
             name: "NIOConcurrencyHelpers",
             dependencies: [
                 "CNIOAtomics"
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .target(
             name: "NIOHTTP1",
             dependencies: [
-                "NIO",
+                .target(name: "NIO", condition: .when(platforms: historicalNIOPosixDependencyRequired)),
                 "NIOCore",
                 "NIOConcurrencyHelpers",
                 "CNIOLLHTTP",
@@ -165,7 +199,7 @@ let package = Package(
         .target(
             name: "NIOWebSocket",
             dependencies: [
-                "NIO",
+                .target(name: "NIO", condition: .when(platforms: historicalNIOPosixDependencyRequired)),
                 "NIOCore",
                 "NIOHTTP1",
                 "CNIOSHA1",
@@ -182,7 +216,7 @@ let package = Package(
         .target(
             name: "NIOTLS",
             dependencies: [
-                "NIO",
+                .target(name: "NIO", condition: .when(platforms: historicalNIOPosixDependencyRequired)),
                 "NIOCore",
                 swiftCollections,
             ]
@@ -225,7 +259,8 @@ let package = Package(
         .target(
             name: "_NIOFileSystemFoundationCompat",
             dependencies: [
-                "_NIOFileSystem"
+                "_NIOFileSystem",
+                "NIOFoundationCompat",
             ],
             path: "Sources/NIOFileSystemFoundationCompat"
         ),
@@ -415,15 +450,18 @@ let package = Package(
             dependencies: [
                 "NIOConcurrencyHelpers",
                 "NIOCore",
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "NIODataStructuresTests",
-            dependencies: ["_NIODataStructures"]
+            dependencies: ["_NIODataStructures"],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "NIOBase64Tests",
-            dependencies: ["_NIOBase64"]
+            dependencies: ["_NIOBase64"],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "NIOHTTP1Tests",
@@ -521,7 +559,6 @@ if Context.environment["SWIFTCI_USE_LOCAL_DEPS"] == nil {
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.0.2"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.2.0"),
-        .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
     ]
 } else {
     package.dependencies += [

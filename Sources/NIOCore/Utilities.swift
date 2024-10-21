@@ -17,6 +17,8 @@ import CNIOLinux
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif canImport(Android)
+import Android
 #endif
 #elseif os(Windows)
 import let WinSDK.RelationProcessorCore
@@ -36,6 +38,8 @@ import struct WinSDK.ULONG
 import typealias WinSDK.DWORD
 #elseif canImport(Darwin)
 import Darwin
+#elseif canImport(WASILibc)
+import WASILibc
 #else
 #error("The Core utilities module was unable to identify your C library.")
 #endif
@@ -127,7 +131,7 @@ public enum System {
         #endif
     }
 
-    #if !os(Windows)
+    #if !os(Windows) && !os(WASI)
     /// A utility function that enumerates the available network interfaces on this machine.
     ///
     /// This function returns values that are true for a brief snapshot in time. These results can
@@ -209,7 +213,7 @@ public enum System {
             }
             pAdapter = pAdapter!.pointee.Next
         }
-        #else
+        #elseif !os(WASI)
         var interface: UnsafeMutablePointer<ifaddrs>? = nil
         try SystemCalls.getifaddrs(&interface)
         let originalInterface = interface
@@ -253,4 +257,15 @@ extension System {
     /// The option can be enabled by setting the ``ChannelOptions/Types/DatagramReceiveOffload`` channel option.
     public static let supportsUDPReceiveOffload: Bool = false
     #endif
+
+    /// Returns the UDP maximum segment count if the platform supports and defines it.
+    public static var udpMaxSegments: Int? {
+        #if os(Linux)
+        let maxSegments = CNIOLinux_UDP_MAX_SEGMENTS
+        if maxSegments != -1 {
+            return maxSegments
+        }
+        #endif
+        return nil
+    }
 }

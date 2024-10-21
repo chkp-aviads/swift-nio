@@ -24,6 +24,9 @@ import CNIOLinux
 #elseif canImport(Musl)
 import Musl
 import CNIOLinux
+#elseif canImport(Bionic)
+import Bionic
+import CNIOLinux
 #endif
 
 @_spi(Testing)
@@ -106,7 +109,7 @@ public enum Syscall {
     }
     #endif
 
-    #if canImport(Glibc) || canImport(Musl)
+    #if canImport(Glibc) || canImport(Musl) || canImport(Bionic)
     @_spi(Testing)
     public static func rename(
         from old: FilePath,
@@ -148,7 +151,7 @@ public enum Syscall {
     }
     #endif
 
-    #if canImport(Glibc) || canImport(Musl)
+    #if canImport(Glibc) || canImport(Musl) || canImport(Bionic)
     @_spi(Testing)
     public struct LinkAtFlags: OptionSet {
         @_spi(Testing)
@@ -253,7 +256,7 @@ public enum Syscall {
         }
     }
 
-    #if canImport(Glibc) || canImport(Musl)
+    #if canImport(Glibc) || canImport(Musl) || canImport(Bionic)
     @_spi(Testing)
     public static func sendfile(
         to output: FileDescriptor,
@@ -306,6 +309,24 @@ public enum Libc {
     ) -> Result<Void, Errno> {
         nothingOrErrno(retryOnInterrupt: false) {
             libc_fcopyfile(source.rawValue, destination.rawValue, state, flags)
+        }
+    }
+    #endif
+
+    #if canImport(Darwin)
+    @_spi(Testing)
+    public static func copyfile(
+        from source: FilePath,
+        to destination: FilePath,
+        state: copyfile_state_t?,
+        flags: copyfile_flags_t
+    ) -> Result<Void, Errno> {
+        source.withPlatformString { sourcePath in
+            destination.withPlatformString { destinationPath in
+                nothingOrErrno(retryOnInterrupt: false) {
+                    libc_copyfile(sourcePath, destinationPath, state, flags)
+                }
+            }
         }
     }
     #endif

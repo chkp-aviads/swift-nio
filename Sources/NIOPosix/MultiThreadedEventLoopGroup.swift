@@ -13,9 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 import Atomics
-import Dispatch
 import NIOConcurrencyHelpers
 import NIOCore
+
+#if canImport(Dispatch)
+import Dispatch
+#endif
 
 struct NIORegistration: Registration {
     enum ChannelType {
@@ -486,7 +489,6 @@ extension MultiThreadedEventLoopGroup: CustomStringConvertible {
     }
 }
 
-#if compiler(>=5.9)
 @usableFromInline
 struct ErasedUnownedJob {
     @usableFromInline
@@ -504,10 +506,18 @@ struct ErasedUnownedJob {
         self.erasedJob as! UnownedJob
     }
 }
-#endif
 
 @usableFromInline
 internal struct ScheduledTask {
+    @usableFromInline
+    enum Kind {
+        case task(task: () -> Void, failFn: (Error) -> Void)
+        case callback(any NIOScheduledCallbackHandler)
+    }
+
+    @usableFromInline
+    let kind: Kind
+
     /// The id of the scheduled task.
     ///
     /// - Important: This id has two purposes. First, it is used to give this struct an identity so that we can implement ``Equatable``
@@ -515,21 +525,22 @@ internal struct ScheduledTask {
     ///     This means, the ids need to be unique for a given ``SelectableEventLoop`` and they need to be in ascending order.
     @usableFromInline
     let id: UInt64
-    let task: () -> Void
-    private let failFn: (Error) -> Void
+
     @usableFromInline
     internal let readyTime: NIODeadline
 
     @usableFromInline
     init(id: UInt64, _ task: @escaping () -> Void, _ failFn: @escaping (Error) -> Void, _ time: NIODeadline) {
         self.id = id
-        self.task = task
-        self.failFn = failFn
         self.readyTime = time
+        self.kind = .task(task: task, failFn: failFn)
     }
 
-    func fail(_ error: Error) {
-        failFn(error)
+    @usableFromInline
+    init(id: UInt64, _ handler: any NIOScheduledCallbackHandler, _ time: NIODeadline) {
+        self.id = id
+        self.readyTime = time
+        self.kind = .callback(handler)
     }
 }
 

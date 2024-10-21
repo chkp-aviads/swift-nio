@@ -65,6 +65,8 @@ internal typealias socklen_t = ucrt.size_t
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif canImport(Android)
+import Android
 #endif
 import CNIOLinux
 
@@ -85,14 +87,27 @@ private let sysInet_ntop:
     @convention(c) (CInt, UnsafeRawPointer?, UnsafeMutablePointer<CChar>?, socklen_t) -> UnsafePointer<CChar>? =
         inet_ntop
 private let sysInet_pton: @convention(c) (CInt, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> CInt = inet_pton
+#elseif canImport(WASILibc)
+import WASILibc
+
+private let sysInet_ntop:
+    @convention(c) (CInt, UnsafeRawPointer?, UnsafeMutablePointer<CChar>?, socklen_t) -> UnsafePointer<CChar>? =
+        inet_ntop
+private let sysInet_pton: @convention(c) (CInt, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> CInt = inet_pton
 #else
 #error("The BSD Socket module was unable to identify your C library.")
 #endif
 
 #if os(Android)
+#if compiler(>=6.0)
+let IFF_BROADCAST: CUnsignedInt = numericCast(Android.IFF_BROADCAST.rawValue)
+let IFF_POINTOPOINT: CUnsignedInt = numericCast(Android.IFF_POINTOPOINT.rawValue)
+let IFF_MULTICAST: CUnsignedInt = numericCast(Android.IFF_MULTICAST.rawValue)
+#else
 let IFF_BROADCAST: CUnsignedInt = numericCast(SwiftGlibc.IFF_BROADCAST.rawValue)
 let IFF_POINTOPOINT: CUnsignedInt = numericCast(SwiftGlibc.IFF_POINTOPOINT.rawValue)
 let IFF_MULTICAST: CUnsignedInt = numericCast(SwiftGlibc.IFF_MULTICAST.rawValue)
+#endif
 #if arch(arm)
 let SO_RCVTIMEO = SO_RCVTIMEO_OLD
 let SO_TIMESTAMP = SO_TIMESTAMP_OLD
@@ -204,12 +219,14 @@ extension NIOBSDSocket.ProtocolFamily {
     public static let inet6: NIOBSDSocket.ProtocolFamily =
         NIOBSDSocket.ProtocolFamily(rawValue: PF_INET6)
 
+    #if !os(WASI)
     /// UNIX local to the host.
     public static let unix: NIOBSDSocket.ProtocolFamily =
         NIOBSDSocket.ProtocolFamily(rawValue: PF_UNIX)
+    #endif
 }
 
-#if !os(Windows)
+#if !os(Windows) && !os(WASI)
 extension NIOBSDSocket.ProtocolFamily {
     /// UNIX local to the host, alias for `PF_UNIX` (`.unix`)
     public static let local: NIOBSDSocket.ProtocolFamily =
@@ -374,6 +391,7 @@ extension NIOBSDSocket.Option {
     public static let mptcp_info = NIOBSDSocket.Option(rawValue: 1)
 }
 
+#if !os(WASI)
 // Socket Options
 extension NIOBSDSocket.Option {
     /// Get the error status and clear.
@@ -388,6 +406,9 @@ extension NIOBSDSocket.Option {
     /// Specifies the total per-socket buffer space reserved for receives.
     public static let so_rcvbuf = Self(rawValue: SO_RCVBUF)
 
+    /// Specifies the total per-socket buffer space reserved for sends.
+    public static let so_sndbuf = Self(rawValue: SO_SNDBUF)
+
     /// Specifies the receive timeout.
     public static let so_rcvtimeo = Self(rawValue: SO_RCVTIMEO)
 
@@ -397,8 +418,9 @@ extension NIOBSDSocket.Option {
     /// Allows the socket to send broadcast messages.
     public static let so_broadcast = Self(rawValue: SO_BROADCAST)
 }
+#endif
 
-#if !os(Windows)
+#if !os(Windows) && !os(WASI)
 extension NIOBSDSocket.Option {
     /// Indicate when to generate timestamps.
     public static let so_timestamp: NIOBSDSocket.Option =

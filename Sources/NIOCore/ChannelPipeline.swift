@@ -457,10 +457,10 @@ public final class ChannelPipeline: ChannelInvoker {
         let promise = self.eventLoop.makePromise(of: ChannelHandlerContext.self)
 
         if self.eventLoop.inEventLoop {
-            promise.completeWith(self.contextSync(handler: handler))
+            promise.assumeIsolated().completeWith(self.contextSync(handler: handler))
         } else {
             self.eventLoop.execute {
-                promise.completeWith(self.contextSync(handler: handler))
+                promise.assumeIsolated().completeWith(self.contextSync(handler: handler))
             }
         }
 
@@ -486,10 +486,10 @@ public final class ChannelPipeline: ChannelInvoker {
         let promise = self.eventLoop.makePromise(of: ChannelHandlerContext.self)
 
         if self.eventLoop.inEventLoop {
-            promise.completeWith(self.contextSync(name: name))
+            promise.assumeIsolated().completeWith(self.contextSync(name: name))
         } else {
             self.eventLoop.execute {
-                promise.completeWith(self.contextSync(name: name))
+                promise.assumeIsolated().completeWith(self.contextSync(name: name))
             }
         }
 
@@ -519,10 +519,10 @@ public final class ChannelPipeline: ChannelInvoker {
         let promise = self.eventLoop.makePromise(of: ChannelHandlerContext.self)
 
         if self.eventLoop.inEventLoop {
-            promise.completeWith(self._contextSync(handlerType: handlerType))
+            promise.assumeIsolated().completeWith(self._contextSync(handlerType: handlerType))
         } else {
             self.eventLoop.execute {
-                promise.completeWith(self._contextSync(handlerType: handlerType))
+                promise.assumeIsolated().completeWith(self._contextSync(handlerType: handlerType))
             }
         }
 
@@ -1168,6 +1168,17 @@ extension ChannelPipeline {
             case .failure(let error):
                 promise.fail(error)
             }
+            return promise.futureResult
+        }
+
+        /// Remove a `ChannelHandler` from the `ChannelPipeline`.
+        ///
+        /// - parameters:
+        ///     - context: the `ChannelHandlerContext` that belongs to `ChannelHandler` that should be removed.
+        /// - returns: the `EventLoopFuture` which will be notified once the `ChannelHandler` was removed.
+        public func removeHandler(context: ChannelHandlerContext) -> EventLoopFuture<Void> {
+            let promise = self.eventLoop.makePromise(of: Void.self)
+            self._pipeline.removeHandler(context: context, promise: promise)
             return promise.futureResult
         }
 

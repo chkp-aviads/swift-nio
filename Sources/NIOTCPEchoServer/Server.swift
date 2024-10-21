@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if compiler(>=5.9)
 import NIOCore
 import NIOPosix
 
@@ -38,7 +37,7 @@ struct Server {
     /// This method starts the server and handles incoming connections.
     func run() async throws {
         let channel = try await ServerBootstrap(group: self.eventLoopGroup)
-            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .bind(
                 host: self.host,
                 port: self.port
@@ -122,11 +121,3 @@ private final class NewlineDelimiterCoder: ByteToMessageDecoder, MessageToByteEn
         out.writeInteger(self.newLine)
     }
 }
-#else
-@main
-struct Server {
-    static func main() {
-        fatalError("Requires at least Swift 5.9")
-    }
-}
-#endif
