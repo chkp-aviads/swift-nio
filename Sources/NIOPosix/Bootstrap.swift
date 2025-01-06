@@ -1641,6 +1641,24 @@ public final class DatagramBootstrap {
             }
         }
     }
+    
+    public func connect(resolver: Resolver, host: String, port: Int, connectTimeout: TimeAmount = .seconds(10)) -> EventLoopFuture<Channel> {
+        let eventLoop = self.group.next()
+        return HappyEyeballsConnector(resolver: resolver, loop: eventLoop, host: host, port: port, connectTimeout: connectTimeout) { event, family in
+            
+            func makeChannel(_ eventLoop: SelectableEventLoop) throws -> DatagramChannel {
+                try DatagramChannel(
+                    eventLoop: eventLoop,
+                    protocolFamily: family,
+                    protocolSubtype: .default
+                )
+            }
+            
+            return self.withNewChannel(eventLoop: eventLoop, makeChannel: makeChannel) { _, channel in
+                return channel.register()
+            }
+        }.resolveAndConnect()
+    }
 
     /// Connect the `DatagramChannel` to `host` and `port`.
     ///
@@ -1692,12 +1710,19 @@ public final class DatagramBootstrap {
             }
         }
     }
-
+    
     private func withNewChannel(
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
         _ bringup: @escaping (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
-        let eventLoop = self.group.next()
+        let eventLoop = group.next()
+        return withNewChannel(eventLoop: eventLoop, makeChannel: makeChannel, bringup)
+    }
+
+    private func withNewChannel(eventLoop: EventLoop,
+        makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
+        _ bringup: @escaping (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
+    ) -> EventLoopFuture<Channel> {
         let channelInitializer = self.channelInitializer ?? { _ in eventLoop.makeSucceededFuture(()) }
         let channelOptions = self._channelOptions
 
