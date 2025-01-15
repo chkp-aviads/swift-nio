@@ -993,6 +993,16 @@ public final class ChannelPipeline: ChannelInvoker {
         self.tail?.prev = self.head
     }
     
+    public func removeAllHandlersAfter(context _context: ChannelHandlerContext) {
+        self.eventLoop.assertInEventLoop()
+
+        if let tail = self.tail {
+            while let context = tail.prev, context !== head, context !== _context {
+                removeHandlerFromPipeline(context: context, promise: nil)
+            }
+        }
+    }
+    
     public func removeAllHandlers() {
         self.eventLoop.assertInEventLoop()
 
