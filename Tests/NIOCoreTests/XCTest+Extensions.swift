@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -14,6 +14,10 @@
 
 import NIOCore
 import XCTest
+
+#if canImport(Android)
+import Android
+#endif
 
 func assert(
     _ condition: @autoclosure () -> Bool,
@@ -57,12 +61,12 @@ func assertNoThrowWithValue<T>(
 
 func withTemporaryFile<T>(content: String? = nil, _ body: (NIOCore.NIOFileHandle, String) throws -> T) throws -> T {
     let temporaryFilePath = "\(temporaryDirectory)/nio_\(UUID())"
-    FileManager.default.createFile(atPath: temporaryFilePath, contents: content?.data(using: .utf8))
+    _ = FileManager.default.createFile(atPath: temporaryFilePath, contents: content?.data(using: .utf8))
     defer {
         XCTAssertNoThrow(try FileManager.default.removeItem(atPath: temporaryFilePath))
     }
 
-    let fileHandle = try NIOFileHandle(path: temporaryFilePath, mode: [.read, .write])
+    let fileHandle = try NIOFileHandle(_deprecatedPath: temporaryFilePath, mode: [.read, .write])
     defer {
         XCTAssertNoThrow(try fileHandle.close())
     }

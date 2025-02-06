@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2020-2022 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2020-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -31,7 +31,8 @@ protocol _SocketShutdownProtocol {
     var cValue: CInt { get }
 }
 
-internal enum Shutdown: _SocketShutdownProtocol {
+@usableFromInline
+internal enum Shutdown: _SocketShutdownProtocol, Sendable {
     case RD
     case WR
     case RDWR
@@ -47,7 +48,7 @@ extension NIOBSDSocket {
 
 extension NIOBSDSocket {
     /// Specifies the type of socket.
-    public struct SocketType: RawRepresentable {
+    public struct SocketType: RawRepresentable, Sendable {
         public typealias RawValue = CInt
         public var rawValue: RawValue
         public init(rawValue: RawValue) {
@@ -142,7 +143,7 @@ extension NIOBSDSocket {
     /// They aren't necessarily protocols in their own right: for example, ``mptcp``
     /// is not. They act to modify the socket type instead: thus, ``mptcp`` acts
     /// to modify `SOCK_STREAM` to ask for ``mptcp`` support.
-    public struct ProtocolSubtype: RawRepresentable, Hashable {
+    public struct ProtocolSubtype: RawRepresentable, Hashable, Sendable {
         public typealias RawValue = CInt
 
         /// The underlying value of the protocol subtype.
@@ -161,7 +162,7 @@ extension NIOBSDSocket.ProtocolSubtype {
 
     /// The protocol subtype for MPTCP.
     ///
-    /// - returns: nil if MPTCP is not supported.
+    /// - Returns: nil if MPTCP is not supported.
     public static var mptcp: Self? {
         #if os(Linux)
         // Defined by the linux kernel, this is IPPROTO_MPTCP.

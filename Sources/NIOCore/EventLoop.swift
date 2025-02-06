@@ -209,7 +209,7 @@ public struct EventLoopIterator: Sequence, IteratorProtocol {
 
     /// Advances to the next `EventLoop` and returns it, or `nil` if no next element exists.
     ///
-    /// - returns: The next `EventLoop` if a next element exists; otherwise, `nil`.
+    /// - Returns: The next `EventLoop` if a next element exists; otherwise, `nil`.
     public mutating func next() -> EventLoop? {
         self.eventLoops.next()
     }
@@ -263,33 +263,38 @@ public protocol EventLoop: EventLoopGroup {
 
     /// Submit a given task to be executed by the `EventLoop`. Once the execution is complete the returned `EventLoopFuture` is notified.
     ///
-    /// - parameters:
-    ///     - task: The closure that will be submitted to the `EventLoop` for execution.
-    /// - returns: `EventLoopFuture` that is notified once the task was executed.
+    /// - Parameters:
+    ///   - task: The closure that will be submitted to the `EventLoop` for execution.
+    /// - Returns: `EventLoopFuture` that is notified once the task was executed.
     @preconcurrency
     func submit<T>(_ task: @escaping @Sendable () throws -> T) -> EventLoopFuture<T>
 
+    /// The current time of the event loop.
+    var now: NIODeadline { get }
+
     /// Schedule a `task` that is executed by this `EventLoop` at the given time.
     ///
-    /// - parameters:
-    ///     - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - deadline: The instant in time before which the task will not execute.
+    ///   - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the completion of the task.
     ///
-    /// - note: You can only cancel a task before it has started executing.
+    /// - Note: You can only cancel a task before it has started executing.
     @discardableResult
     @preconcurrency
     func scheduleTask<T>(deadline: NIODeadline, _ task: @escaping @Sendable () throws -> T) -> Scheduled<T>
 
     /// Schedule a `task` that is executed by this `EventLoop` after the given amount of time.
     ///
-    /// - parameters:
-    ///     - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - in: The amount of time before which the task will not execute.
+    ///   - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the completion of the task.
     ///
-    /// - note: You can only cancel a task before it has started executing.
-    /// - note: The `in` value is clamped to a maximum when running on a Darwin-kernel.
+    /// - Note: You can only cancel a task before it has started executing.
+    /// - Note: The `in` value is clamped to a maximum when running on a Darwin-kernel.
     @discardableResult
     @preconcurrency
     func scheduleTask<T>(in: TimeAmount, _ task: @escaping @Sendable () throws -> T) -> Scheduled<T>
@@ -393,6 +398,11 @@ public protocol EventLoop: EventLoopGroup {
 }
 
 extension EventLoop {
+    /// Default implementation of `now`: Returns `NIODeadline.now()`.
+    public var now: NIODeadline { .now() }
+}
+
+extension EventLoop {
     /// Default implementation of `makeSucceededVoidFuture`: Return a fresh future (which will allocate).
     public func makeSucceededVoidFuture() -> EventLoopFuture<Void> {
         EventLoopFuture(eventLoop: self, value: ())
@@ -441,7 +451,7 @@ extension EventLoopGroup {
 
 /// Represents a time _interval_.
 ///
-/// - note: `TimeAmount` should not be used to represent a point in time.
+/// - Note: `TimeAmount` should not be used to represent a point in time.
 public struct TimeAmount: Hashable, Sendable {
     @available(*, deprecated, message: "This typealias doesn't serve any purpose. Please use Int64 directly.")
     public typealias Value = Int64
@@ -456,9 +466,9 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of nanoseconds.
     ///
-    /// - parameters:
-    ///     - amount: the amount of nanoseconds this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of nanoseconds this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     @inlinable
     public static func nanoseconds(_ amount: Int64) -> TimeAmount {
         TimeAmount(amount)
@@ -466,11 +476,11 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of microseconds.
     ///
-    /// - parameters:
-    ///     - amount: the amount of microseconds this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of microseconds this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     ///
-    /// - note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
+    /// - Note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
     @inlinable
     public static func microseconds(_ amount: Int64) -> TimeAmount {
         TimeAmount(_cappedNanoseconds(amount: amount, multiplier: 1000))
@@ -478,11 +488,11 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of milliseconds.
     ///
-    /// - parameters:
-    ///     - amount: the amount of milliseconds this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of milliseconds this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     ///
-    /// - note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
+    /// - Note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
     @inlinable
     public static func milliseconds(_ amount: Int64) -> TimeAmount {
         TimeAmount(_cappedNanoseconds(amount: amount, multiplier: 1000 * 1000))
@@ -490,11 +500,11 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of seconds.
     ///
-    /// - parameters:
-    ///     - amount: the amount of seconds this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of seconds this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     ///
-    /// - note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
+    /// - Note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
     @inlinable
     public static func seconds(_ amount: Int64) -> TimeAmount {
         TimeAmount(_cappedNanoseconds(amount: amount, multiplier: 1000 * 1000 * 1000))
@@ -502,11 +512,11 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of minutes.
     ///
-    /// - parameters:
-    ///     - amount: the amount of minutes this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of minutes this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     ///
-    /// - note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
+    /// - Note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
     @inlinable
     public static func minutes(_ amount: Int64) -> TimeAmount {
         TimeAmount(_cappedNanoseconds(amount: amount, multiplier: 1000 * 1000 * 1000 * 60))
@@ -514,11 +524,11 @@ public struct TimeAmount: Hashable, Sendable {
 
     /// Creates a new `TimeAmount` for the given amount of hours.
     ///
-    /// - parameters:
-    ///     - amount: the amount of hours this `TimeAmount` represents.
-    /// - returns: the `TimeAmount` for the given amount.
+    /// - Parameters:
+    ///   - amount: the amount of hours this `TimeAmount` represents.
+    /// - Returns: the `TimeAmount` for the given amount.
     ///
-    /// - note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
+    /// - Note: returns `TimeAmount(.max)` if the amount overflows when converted to nanoseconds and `TimeAmount(.min)` if it underflows.
     @inlinable
     public static func hours(_ amount: Int64) -> TimeAmount {
         TimeAmount(_cappedNanoseconds(amount: amount, multiplier: 1000 * 1000 * 1000 * 60 * 60))
@@ -527,8 +537,8 @@ public struct TimeAmount: Hashable, Sendable {
     /// Converts `amount` to nanoseconds multiplying it by `multiplier`. The return value is capped to `Int64.max` if the multiplication overflows and `Int64.min` if it underflows.
     ///
     ///  - parameters:
-    ///     - amount: the amount to be converted to nanoseconds.
-    ///     - multiplier: the multiplier that converts the given amount to nanoseconds.
+    ///   - amount: the amount to be converted to nanoseconds.
+    ///   - multiplier: the multiplier that converts the given amount to nanoseconds.
     ///  - returns: the amount converted to nanoseconds within [Int64.min, Int64.max].
     @inlinable
     static func _cappedNanoseconds(amount: Int64, multiplier: Int64) -> Int64 {
@@ -602,7 +612,7 @@ extension TimeAmount: AdditiveArithmetic {
 /// doSomething(deadline: .now() + .seconds(5))
 /// ```
 ///
-/// - note: `NIODeadline` should not be used to represent a time interval
+/// - Note: `NIODeadline` should not be used to represent a time interval
 public struct NIODeadline: Equatable, Hashable, Sendable {
     @available(*, deprecated, message: "This typealias doesn't serve any purpose, please use UInt64 directly.")
     public typealias Value = UInt64
@@ -746,17 +756,18 @@ extension EventLoop {
     /// The returned `EventLoopFuture` will be completed when `task` has finished running. It will be succeeded with
     /// `task`'s return value or failed if the execution of `task` threw an error.
     ///
-    /// - parameters:
-    ///     - task: The synchronous task to run. As everything that runs on the `EventLoop`, it must not block.
-    /// - returns: An `EventLoopFuture` containing the result of `task`'s execution.
+    /// - Parameters:
+    ///   - task: The synchronous task to run. As everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: An `EventLoopFuture` containing the result of `task`'s execution.
     @inlinable
     @preconcurrency
-    public func submit<T: Sendable>(_ task: @escaping @Sendable () throws -> T) -> EventLoopFuture<T> {
+    public func submit<T>(_ task: @escaping @Sendable () throws -> T) -> EventLoopFuture<T> {
         let promise: EventLoopPromise<T> = makePromise(file: #fileID, line: #line)
 
         self.execute {
             do {
-                promise.succeed(try task())
+                // UnsafeUnchecked is allowed here because we know we are on the EL.
+                promise.assumeIsolatedUnsafeUnchecked().succeed(try task())
             } catch let err {
                 promise.fail(err)
             }
@@ -770,9 +781,9 @@ extension EventLoop {
     /// The returned `EventLoopFuture` will be completed when `task` has finished running. It will be identical to
     /// the `EventLoopFuture` returned by `task`.
     ///
-    /// - parameters:
-    ///     - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: An `EventLoopFuture` identical to the `EventLoopFuture` returned from `task`.
+    /// - Parameters:
+    ///   - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: An `EventLoopFuture` identical to the `EventLoopFuture` returned from `task`.
     @inlinable
     @preconcurrency
     public func flatSubmit<T: Sendable>(_ task: @escaping @Sendable () -> EventLoopFuture<T>) -> EventLoopFuture<T> {
@@ -784,12 +795,15 @@ extension EventLoop {
     /// - Note: The `T` must be `Sendable` since the isolation domains of the event loop future returned from `task` and
     /// this event loop might differ.
     ///
-    /// - parameters:
-    ///     - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - deadline: The instant in time before which the task will not execute.
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
+    ///   - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the full execution of the task, including its returned `EventLoopFuture`.
     ///
-    /// - note: You can only cancel a task before it has started executing.
+    /// - Note: You can only cancel a task before it has started executing.
     @discardableResult
     @inlinable
     @preconcurrency
@@ -811,12 +825,15 @@ extension EventLoop {
     /// - Note: The `T` must be `Sendable` since the isolation domains of the event loop future returned from `task` and
     /// this event loop might differ.
     ///
-    /// - parameters:
-    ///     - task: The asynchronous task to run. As everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - delay: The amount of time before which the task will not execute.
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
+    ///   - task: The asynchronous task to run. As everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the full execution of the task, including its returned `EventLoopFuture`.
     ///
-    /// - note: You can only cancel a task before it has started executing.
+    /// - Note: You can only cancel a task before it has started executing.
     @discardableResult
     @inlinable
     @preconcurrency
@@ -857,9 +874,9 @@ extension EventLoop {
 
     /// Creates and returns a new `EventLoopFuture` that is already marked as failed. Notifications will be done using this `EventLoop` as execution `NIOThread`.
     ///
-    /// - parameters:
-    ///     - error: the `Error` that is used by the `EventLoopFuture`.
-    /// - returns: a failed `EventLoopFuture`.
+    /// - Parameters:
+    ///   - error: the `Error` that is used by the `EventLoopFuture`.
+    /// - Returns: a failed `EventLoopFuture`.
     @inlinable
     public func makeFailedFuture<T>(_ error: Error) -> EventLoopFuture<T> {
         EventLoopFuture<T>(eventLoop: self, error: error)
@@ -867,9 +884,9 @@ extension EventLoop {
 
     /// Creates and returns a new `EventLoopFuture` that is already marked as success. Notifications will be done using this `EventLoop` as execution `NIOThread`.
     ///
-    /// - parameters:
-    ///     - result: the value that is used by the `EventLoopFuture`.
-    /// - returns: a succeeded `EventLoopFuture`.
+    /// - Parameters:
+    ///   - value: the value that is used by the `EventLoopFuture`.
+    /// - Returns: a succeeded `EventLoopFuture`.
     @preconcurrency
     @inlinable
     public func makeSucceededFuture<Success: Sendable>(_ value: Success) -> EventLoopFuture<Success> {
@@ -913,14 +930,14 @@ extension EventLoop {
 
     /// An `EventLoop` forms a singular `EventLoopGroup`, returning itself as the 'next' `EventLoop`.
     ///
-    /// - returns: Itself, because an `EventLoop` forms a singular `EventLoopGroup`.
+    /// - Returns: Itself, because an `EventLoop` forms a singular `EventLoopGroup`.
     public func next() -> EventLoop {
         self
     }
 
     /// An `EventLoop` forms a singular `EventLoopGroup`, returning itself as 'any' `EventLoop`.
     ///
-    /// - returns: Itself, because an `EventLoop` forms a singular `EventLoopGroup`.
+    /// - Returns: Itself, because an `EventLoop` forms a singular `EventLoopGroup`.
     public func any() -> EventLoop {
         self
     }
@@ -933,11 +950,11 @@ extension EventLoop {
     /// Schedule a repeated task to be executed by the `EventLoop` with a fixed delay between the end and start of each
     /// task.
     ///
-    /// - parameters:
-    ///     - initialDelay: The delay after which the first task is executed.
-    ///     - delay: The delay between the end of one task and the start of the next.
-    ///     - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
-    ///     - task: The closure that will be executed.
+    /// - Parameters:
+    ///   - initialDelay: The delay after which the first task is executed.
+    ///   - delay: The delay between the end of one task and the start of the next.
+    ///   - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
+    ///   - task: The closure that will be executed.
     /// - return: `RepeatedTask`
     @discardableResult
     @preconcurrency
@@ -953,12 +970,12 @@ extension EventLoop {
     /// Schedule a repeated task to be executed by the `EventLoop` with a fixed delay between the end and start of each
     /// task.
     ///
-    /// - parameters:
-    ///     - initialDelay: The delay after which the first task is executed.
-    ///     - delay: The delay between the end of one task and the start of the next.
-    ///     - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
-    ///     - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
-    ///     - task: The closure that will be executed.
+    /// - Parameters:
+    ///   - initialDelay: The delay after which the first task is executed.
+    ///   - delay: The delay between the end of one task and the start of the next.
+    ///   - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
+    ///   - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
+    ///   - task: The closure that will be executed.
     /// - return: `RepeatedTask`
     @discardableResult
     public func scheduleRepeatedTask(
@@ -1002,16 +1019,16 @@ extension EventLoop {
     /// Schedule a repeated asynchronous task to be executed by the `EventLoop` with a fixed delay between the end and
     /// start of each task.
     ///
-    /// - note: The delay is measured from the completion of one run's returned future to the start of the execution of
+    /// - Note: The delay is measured from the completion of one run's returned future to the start of the execution of
     ///         the next run. For example: If you schedule a task once per second but your task takes two seconds to
     ///         complete, the time interval between two subsequent runs will actually be three seconds (2s run time plus
     ///         the 1s delay.)
     ///
-    /// - parameters:
-    ///     - initialDelay: The delay after which the first task is executed.
-    ///     - delay: The delay between the end of one task and the start of the next.
-    ///     - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
-    ///     - task: The closure that will be executed. Task will keep repeating regardless of whether the future
+    /// - Parameters:
+    ///   - initialDelay: The delay after which the first task is executed.
+    ///   - delay: The delay between the end of one task and the start of the next.
+    ///   - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
+    ///   - task: The closure that will be executed. Task will keep repeating regardless of whether the future
     ///             gets fulfilled with success or error.
     ///
     /// - return: `RepeatedTask`
@@ -1029,17 +1046,17 @@ extension EventLoop {
     /// Schedule a repeated asynchronous task to be executed by the `EventLoop` with a fixed delay between the end and
     /// start of each task.
     ///
-    /// - note: The delay is measured from the completion of one run's returned future to the start of the execution of
+    /// - Note: The delay is measured from the completion of one run's returned future to the start of the execution of
     ///         the next run. For example: If you schedule a task once per second but your task takes two seconds to
     ///         complete, the time interval between two subsequent runs will actually be three seconds (2s run time plus
     ///         the 1s delay.)
     ///
-    /// - parameters:
-    ///     - initialDelay: The delay after which the first task is executed.
-    ///     - delay: The delay between the end of one task and the start of the next.
-    ///     - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
-    ///     - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
-    ///     - task: The closure that will be executed. Task will keep repeating regardless of whether the future
+    /// - Parameters:
+    ///   - initialDelay: The delay after which the first task is executed.
+    ///   - delay: The delay between the end of one task and the start of the next.
+    ///   - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
+    ///   - promise: If non-nil, a promise to fulfill when the task is cancelled and all execution is complete.
+    ///   - task: The closure that will be executed. Task will keep repeating regardless of whether the future
     ///             gets fulfilled with success or error.
     ///
     /// - return: `RepeatedTask`
@@ -1078,10 +1095,10 @@ extension EventLoop {
 
     /// Adds a random amount of `.nanoseconds` (within `.zero..<maximumAllowableJitter`) to the delay.
     ///
-    /// - parameters:
-    ///     - delay: the `TimeAmount` delay to jitter.
-    ///     - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
-    /// - returns: The jittered delay.
+    /// - Parameters:
+    ///   - delay: the `TimeAmount` delay to jitter.
+    ///   - maximumAllowableJitter: Exclusive upper bound of jitter range added to the `delay` parameter.
+    /// - Returns: The jittered delay.
     @inlinable
     static func _getJitteredDelay(
         delay: TimeAmount,
@@ -1093,7 +1110,7 @@ extension EventLoop {
 
     /// Returns an `EventLoopIterator` over this `EventLoop`.
     ///
-    /// - returns: `EventLoopIterator`
+    /// - Returns: `EventLoopIterator`
     public func makeIterator() -> EventLoopIterator {
         EventLoopIterator([self])
     }
@@ -1102,7 +1119,7 @@ extension EventLoop {
     /// Otherwise, if running in debug mode, the process will be abnormally terminated as per the semantics of
     /// `preconditionFailure(_:file:line:)`. Never has any effect in release mode.
     ///
-    /// - note: This is not a customization point so calls to this function can be fully optimized out in release mode.
+    /// - Note: This is not a customization point so calls to this function can be fully optimized out in release mode.
     @inlinable
     public func assertInEventLoop(file: StaticString = #fileID, line: UInt = #line) {
         debugOnly {
@@ -1114,7 +1131,7 @@ extension EventLoop {
     /// Otherwise, if running in debug mode, the process will be abnormally terminated as per the semantics of
     /// `preconditionFailure(_:file:line:)`. Never has any effect in release mode.
     ///
-    /// - note: This is not a customization point so calls to this function can be fully optimized out in release mode.
+    /// - Note: This is not a customization point so calls to this function can be fully optimized out in release mode.
     @inlinable
     public func assertNotInEventLoop(file: StaticString = #fileID, line: UInt = #line) {
         debugOnly {
@@ -1158,7 +1175,7 @@ public protocol EventLoopGroup: AnyObject, _NIOPreconcurrencySendable {
     ///            choosing the current one. Use this method only if you are truly happy with _any_ `EventLoop` of this
     ///            `EventLoopGroup` instance.
     ///
-    /// - note: You will only receive the current `EventLoop` here iff the current `EventLoop` belongs to the
+    /// - Note: You will only receive the current `EventLoop` here iff the current `EventLoop` belongs to the
     ///         `EventLoopGroup` you call `any()` on.
     ///
     /// This method is useful having access to an `EventLoopGroup` without the knowledge of which `EventLoop` would be
@@ -1183,7 +1200,7 @@ public protocol EventLoopGroup: AnyObject, _NIOPreconcurrencySendable {
 
     /// Returns an `EventLoopIterator` over the `EventLoop`s in this `EventLoopGroup`.
     ///
-    /// - returns: `EventLoopIterator`
+    /// - Returns: `EventLoopIterator`
     func makeIterator() -> EventLoopIterator
 
     /// Must crash if it's not safe to call `syncShutdownGracefully` in the current context.
@@ -1238,16 +1255,33 @@ extension EventLoopGroup {
 }
 #endif
 
-/// This type is intended to be used by libraries which use NIO, and offer their users either the option
+/// Deprecated.
+///
+/// This type was intended to be used by libraries which use NIO, and offer their users either the option
 /// to `.share` an existing event loop group or create (and manage) a new one (`.createNew`) and let it be
 /// managed by given library and its lifecycle.
+///
+/// Please use a `group: any EventLoopGroup` parameter instead. If you want to default to a global
+/// singleton group instead, consider group: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton` or
+/// similar.
+///
+/// - See also: https://github.com/apple/swift-nio/issues/2142
 public enum NIOEventLoopGroupProvider {
     /// Use an `EventLoopGroup` provided by the user.
     /// The owner of this group is responsible for its lifecycle.
     case shared(EventLoopGroup)
-    /// Create a new `EventLoopGroup` when necessary.
+
+    /// Deprecated. Create a new `EventLoopGroup` when necessary.
     /// The library which accepts this provider takes ownership of the created event loop group,
     /// and must ensure its proper shutdown when the library is being shut down.
+    @available(
+        *,
+        deprecated,
+        message: """
+            Please use `.shared(existingGroup)` or use the singleton via \
+            `.shared(MultiThreadedEventLoopGroup.singleton)` or similar
+            """
+    )
     case createNew
 }
 

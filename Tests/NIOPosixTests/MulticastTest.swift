@@ -11,7 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-
+import CNIOLinux
 import NIOCore
 import NIOPosix
 import XCTest
@@ -27,7 +27,7 @@ final class PromiseOnReadHandler: ChannelInboundHandler {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         self.promise.succeed(Self.unwrapInboundIn(data))
-        _ = context.pipeline.removeHandler(context: context)
+        context.pipeline.syncOperations.removeHandler(context: context, promise: nil)
     }
 }
 

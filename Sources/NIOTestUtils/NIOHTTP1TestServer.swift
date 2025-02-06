@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2019-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2019-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -16,6 +16,50 @@ import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+
+typealias SendableHTTPServerResponsePart = HTTPPart<HTTPResponseHead, ByteBuffer>
+
+extension HTTPServerResponsePart {
+    init(_ target: SendableHTTPServerResponsePart) {
+        switch target {
+        case .head(let head):
+            self = .head(head)
+        case .body(let body):
+            self = .body(.byteBuffer(body))
+        case .end(let end):
+            self = .end(end)
+        }
+    }
+}
+
+extension SendableHTTPServerResponsePart {
+    init(_ target: HTTPServerResponsePart) throws {
+        switch target {
+        case .head(let head):
+            self = .head(head)
+        case .body(.byteBuffer(let body)):
+            self = .body(body)
+        case .body(.fileRegion):
+            throw NIOHTTP1TestServerError(
+                reason: "FileRegion is not Sendable and cannot be passed across concurrency domains"
+            )
+        case .end(let end):
+            self = .end(end)
+        }
+    }
+}
+
+/// A helper handler to transform a Sendable response into a
+/// non-Sendable one, to manage warnings.
+private final class TransformerHandler: ChannelOutboundHandler {
+    typealias OutboundIn = SendableHTTPServerResponsePart
+    typealias OutboundOut = HTTPServerResponsePart
+
+    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+        let response = self.unwrapOutboundIn(data)
+        context.write(self.wrapOutboundOut(.init(response)), promise: promise)
+    }
+}
 
 private final class BlockingQueue<Element> {
     private let condition = ConditionLock(value: false)
@@ -74,6 +118,7 @@ private final class WebServerHandler: ChannelDuplexHandler {
     }
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+        let loopBoundContext = context.loopBound
         switch Self.unwrapOutboundIn(data) {
         case .head(var head):
             head.headers.replaceOrAdd(name: "connection", value: "close")
@@ -83,6 +128,7 @@ private final class WebServerHandler: ChannelDuplexHandler {
             context.write(data, promise: promise)
         case .end:
             context.write(data).map {
+                let context = loopBoundContext.value
                 context.close(promise: nil)
             }.cascade(to: promise)
         }
@@ -225,6 +271,8 @@ public final class NIOHTTP1TestServer {
             }
         }.flatMap {
             channel.pipeline.addHandler(WebServerHandler(webServer: self))
+        }.flatMap {
+            channel.pipeline.addHandler(TransformerHandler())
         }.whenSuccess {
             _ = channel.setOption(.autoRead, value: true)
         }
@@ -305,9 +353,11 @@ extension NIOHTTP1TestServer {
 
     public func writeOutbound(_ data: HTTPServerResponsePart) throws {
         self.eventLoop.assertNotInEventLoop()
+
+        let transformed = try SendableHTTPServerResponsePart(data)
         try self.eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
             if let channel = self.currentClientChannel {
-                return channel.writeAndFlush(data)
+                return channel.writeAndFlush(transformed)
             } else {
                 return self.eventLoop.makeFailedFuture(ChannelError.ioOnClosedChannel)
             }

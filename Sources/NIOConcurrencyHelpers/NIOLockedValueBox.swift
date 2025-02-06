@@ -14,7 +14,7 @@
 
 /// Provides locked access to `Value`.
 ///
-/// - note: ``NIOLockedValueBox`` has reference semantics and holds the `Value`
+/// - Note: ``NIOLockedValueBox`` has reference semantics and holds the `Value`
 ///         alongside a lock behind a reference.
 ///
 /// This is no different than creating a ``Lock`` and protecting all
@@ -79,4 +79,4 @@ public struct NIOLockedValueBox<Value> {
     }
 }
 
-extension NIOLockedValueBox: Sendable where Value: Sendable {}
+extension NIOLockedValueBox: @unchecked Sendable where Value: Sendable {}

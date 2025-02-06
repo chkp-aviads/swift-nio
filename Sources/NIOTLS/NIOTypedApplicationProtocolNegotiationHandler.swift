@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2023 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2023-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -125,10 +125,12 @@ public final class NIOTypedApplicationProtocolNegotiationHandler<NegotiationResu
 
     private func invokeUserClosure(context: ChannelHandlerContext, result: ALPNResult) {
         let switchFuture = self.completionHandler(result, context.channel)
+        let loopBoundSelfAndContext = NIOLoopBound((self, context), eventLoop: context.eventLoop)
 
         switchFuture
             .hop(to: context.eventLoop)
             .whenComplete { result in
+                let (`self`, context) = loopBoundSelfAndContext.value
                 self.userFutureCompleted(context: context, result: result)
             }
     }
@@ -138,7 +140,7 @@ public final class NIOTypedApplicationProtocolNegotiationHandler<NegotiationResu
         case .fireErrorCaughtAndRemoveHandler(let error):
             self.negotiatedPromise.fail(error)
             context.fireErrorCaught(error)
-            context.pipeline.removeHandler(self, promise: nil)
+            context.pipeline.syncOperations.removeHandler(self, promise: nil)
 
         case .fireErrorCaughtAndStartUnbuffering(let error):
             self.negotiatedPromise.fail(error)
@@ -151,7 +153,7 @@ public final class NIOTypedApplicationProtocolNegotiationHandler<NegotiationResu
 
         case .removeHandler(let value):
             self.negotiatedPromise.succeed(value)
-            context.pipeline.removeHandler(self, promise: nil)
+            context.pipeline.syncOperations.removeHandler(self, promise: nil)
 
         case .none:
             break
@@ -166,7 +168,7 @@ public final class NIOTypedApplicationProtocolNegotiationHandler<NegotiationResu
 
             case .fireChannelReadCompleteAndRemoveHandler:
                 context.fireChannelReadComplete()
-                context.pipeline.removeHandler(self, promise: nil)
+                context.pipeline.syncOperations.removeHandler(self, promise: nil)
                 return
             }
         }

@@ -365,8 +365,8 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
 
     /// Spin the state machine.
     ///
-    /// - parameters:
-    ///     - input: The input to the state machine.
+    /// - Parameters:
+    ///   - input: The input to the state machine.
     private func processInput(_ input: ConnectorInput) {
         switch (state, input) {
         // Only one valid transition from idle: to start resolving.
@@ -462,7 +462,12 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
         // notifications, and can also get late scheduled task callbacks. We want to just quietly
         // ignore these, as our transition into the complete state should have already sent
         // cleanup messages to all of these things.
-        case (.complete, .resolverACompleted),
+        //
+        // We can also get the resolutionDelayElapsed after allResolved, as it's possible that
+        // callback was already dequeued in the same tick as the cancellation. That's also fine:
+        // the resolution delay isn't interesting.
+        case (.allResolved, .resolutionDelayElapsed),
+            (.complete, .resolverACompleted),
             (.complete, .resolverAAAACompleted),
             (.complete, .connectSuccess),
             (.complete, .connectFailed),
@@ -582,8 +587,8 @@ public final class HappyEyeballsConnector<ChannelBuilderResult> {
 
     /// Called to connect to a given target.
     ///
-    /// - parameters:
-    ///     - target: The address to connect to.
+    /// - Parameters:
+    ///   - target: The address to connect to.
     private func connectToTarget(_ target: SocketAddress) {
         let channelFuture = channelBuilderCallback(self.loop, target.protocol)
         pendingConnections.append(channelFuture)

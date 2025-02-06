@@ -22,6 +22,7 @@ public enum NIOAsyncSequenceProducerBackPressureStrategies {
     public struct HighLowWatermark: NIOAsyncSequenceProducerBackPressureStrategy {
         private let lowWatermark: Int
         private let highWatermark: Int
+        private var hasOustandingDemand: Bool = true
 
         /// Initializes a new ``NIOAsyncSequenceProducerBackPressureStrategies/HighLowWatermark``.
         ///
@@ -36,12 +37,20 @@ public enum NIOAsyncSequenceProducerBackPressureStrategies {
 
         public mutating func didYield(bufferDepth: Int) -> Bool {
             // We are demanding more until we reach the high watermark
-            bufferDepth < self.highWatermark
+            if bufferDepth >= self.highWatermark {
+                self.hasOustandingDemand = false
+            }
+
+            return self.hasOustandingDemand
         }
 
         public mutating func didConsume(bufferDepth: Int) -> Bool {
             // We start demanding again once we are below the low watermark
-            bufferDepth < self.lowWatermark
+            if bufferDepth < self.lowWatermark {
+                self.hasOustandingDemand = true
+            }
+
+            return self.hasOustandingDemand
         }
     }
 }

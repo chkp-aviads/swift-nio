@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import CNIODarwin
+import CNIOLinux
 import NIOEmbedded
 import XCTest
 
@@ -71,13 +73,13 @@ class PendingDatagramWritesManagerTests: XCTestCase {
     ///
     /// The write operations will all be faked and return the return values provided in `returns`.
     ///
-    /// - parameters:
-    ///     - pwm: The `PendingStreamWritesManager` to test.
-    ///     - promises: The promises for the writes issued.
-    ///     - expectedSingleWritabilities: The expected buffer lengths and addresses for the calls to the single write operation.
-    ///     - expectedVectorWritabilities: The expected buffer lengths and addresses for the calls to the vector write operation.
-    ///     - returns: The return values of the fakes write operations (both single and vector).
-    ///     - promiseStates: The states of the promises _after_ the write operations are done.
+    /// - Parameters:
+    ///   - pwm: The `PendingStreamWritesManager` to test.
+    ///   - promises: The promises for the writes issued.
+    ///   - expectedSingleWritabilities: The expected buffer lengths and addresses for the calls to the single write operation.
+    ///   - expectedVectorWritabilities: The expected buffer lengths and addresses for the calls to the vector write operation.
+    ///   - returns: The return values of the fakes write operations (both single and vector).
+    ///   - promiseStates: The states of the promises _after_ the write operations are done.
     private func assertExpectedWritability(
         pendingWritesManager pwm: PendingDatagramWritesManager,
         promises: [EventLoopPromise<Void>],

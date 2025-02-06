@@ -69,7 +69,8 @@ final class NIOAsyncWriterTests: XCTestCase {
     override func setUp() {
         super.setUp()
 
-        self.delegate = .init()
+        let delegate = MockAsyncWriterDelegate()
+        self.delegate = delegate
         let newWriter = NIOAsyncWriter.makeWriter(
             elementType: String.self,
             isWritable: true,
@@ -78,7 +79,7 @@ final class NIOAsyncWriterTests: XCTestCase {
         )
         self.writer = newWriter.writer
         self.sink = newWriter.sink
-        self.sink._storage._setDidSuspend { self.delegate.didSuspend() }
+        self.sink._storage._setDidSuspend { delegate.didSuspend() }
     }
 
     override func tearDown() {
@@ -411,7 +412,7 @@ final class NIOAsyncWriterTests: XCTestCase {
         let cancelled = expectation(description: "task cancelled")
 
         let task = Task { [writer] in
-            await fulfillment(of: [cancelled], timeout: 1)
+            await XCTWaiter().fulfillment(of: [cancelled], timeout: 1)
             try await writer!.yield("message2")
         }
 
@@ -470,7 +471,7 @@ final class NIOAsyncWriterTests: XCTestCase {
         let cancelled = expectation(description: "task cancelled")
 
         let task = Task { [writer] in
-            await fulfillment(of: [cancelled], timeout: 1)
+            await XCTWaiter().fulfillment(of: [cancelled], timeout: 1)
             try await writer!.yield("message1")
         }
 
@@ -491,7 +492,7 @@ final class NIOAsyncWriterTests: XCTestCase {
         let cancelled = expectation(description: "task cancelled")
 
         let task = Task { [writer] in
-            await fulfillment(of: [cancelled], timeout: 1)
+            await XCTWaiter().fulfillment(of: [cancelled], timeout: 1)
             try await writer!.yield("message2")
         }
 
@@ -545,7 +546,7 @@ final class NIOAsyncWriterTests: XCTestCase {
         let cancelled = expectation(description: "task cancelled")
 
         let task = Task { [writer] in
-            await fulfillment(of: [cancelled], timeout: 1)
+            await XCTWaiter().fulfillment(of: [cancelled], timeout: 1)
             try await writer!.yield("message1")
         }
 
@@ -603,6 +604,50 @@ final class NIOAsyncWriterTests: XCTestCase {
         await XCTAssertNoThrow(try await task.value)
 
         self.assert(suspendCallCount: 1, yieldCallCount: 1, terminateCallCount: 1)
+    }
+
+    func testSuspendingBufferedYield_whenWriterFinished() async throws {
+        self.sink.setWritability(to: false)
+
+        let bothSuspended = expectation(description: "suspended on both yields")
+        let suspendedAgain = ConditionLock(value: false)
+        self.delegate.didSuspendHandler = {
+            if self.delegate.didSuspendCallCount == 2 {
+                bothSuspended.fulfill()
+            } else if self.delegate.didSuspendCallCount > 2 {
+                suspendedAgain.lock()
+                suspendedAgain.unlock(withValue: true)
+            }
+        }
+
+        self.delegate.didYieldHandler = { _ in
+            if self.delegate.didYieldCallCount == 1 {
+                // Delay this yield until the other yield is suspended again.
+                suspendedAgain.lock(whenValue: true)
+                suspendedAgain.unlock()
+            }
+        }
+
+        let task1 = Task { [writer] in
+            try await writer!.yield("message1")
+        }
+        let task2 = Task { [writer] in
+            try await writer!.yield("message2")
+        }
+
+        await fulfillment(of: [bothSuspended], timeout: 1)
+        self.writer.finish()
+
+        self.assert(suspendCallCount: 2, yieldCallCount: 0, terminateCallCount: 0)
+
+        // We have to become writable again to unbuffer the yields
+        // The first call to didYield will pause, so that the other yield will be suspended again.
+        self.sink.setWritability(to: true)
+
+        await XCTAssertNoThrow(try await task1.value)
+        await XCTAssertNoThrow(try await task2.value)
+
+        self.assert(suspendCallCount: 3, yieldCallCount: 2, terminateCallCount: 1)
     }
 
     func testWriterFinish_whenFinished() {

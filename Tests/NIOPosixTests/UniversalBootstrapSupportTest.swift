@@ -83,7 +83,13 @@ class UniversalBootstrapSupportTest: XCTestCase {
 
                 let client = try NIOClientTCPBootstrap(ClientBootstrap(group: group), tls: DummyTLSProvider())
                     .channelInitializer { channel in
-                        channel.pipeline.addHandlers(counter1, DropChannelReadsHandler(), counter2)
+                        channel.eventLoop.makeCompletedFuture {
+                            try channel.pipeline.syncOperations.addHandlers(
+                                counter1,
+                                DropChannelReadsHandler(),
+                                counter2
+                            )
+                        }
                     }
                     .channelOption(.autoRead, value: false)
                     .connectTimeout(.hours(1))
@@ -128,7 +134,7 @@ class UniversalBootstrapSupportTest: XCTestCase {
                 // let's check that the order is right
                 XCTAssertNoThrow(
                     try client.eventLoop.submit {
-                        client.pipeline.fireChannelRead(NIOAny(buffer))
+                        client.pipeline.fireChannelRead(buffer)
                         client.pipeline.fireUserInboundEventTriggered(buffer)
                     }.wait()
                 )

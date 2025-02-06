@@ -279,7 +279,7 @@ public struct NIOAsyncWriter<
     ///
     /// This can be called more than once and from multiple `Task`s at the same time.
     ///
-    /// - Parameter contentsOf: The sequence to yield.
+    /// - Parameter sequence: The sequence to yield.
     @inlinable
     public func yield<S: Sequence>(contentsOf sequence: S) async throws where S.Element == Element {
         try await self._storage.yield(contentsOf: sequence)
@@ -1173,7 +1173,38 @@ extension NIOAsyncWriter {
                     delegate: delegate
                 )
 
-            case .initial, .finished, .writerFinished:
+            case .writerFinished(
+                let isWritable,
+                let inDelegateOutcall,
+                var suspendedYields,
+                let cancelledYields,
+                let bufferedYieldIDs,
+                let delegate,
+                let error
+            ):
+                // We have a suspended yield at this point that hasn't been cancelled yet.
+                // It was buffered before we became finished, so we still have to deliver it.
+                // We need to store the yield now.
+
+                self._state = .modifying
+
+                let suspendedYield = SuspendedYield(
+                    yieldID: yieldID,
+                    continuation: continuation
+                )
+                suspendedYields.append(suspendedYield)
+
+                self._state = .writerFinished(
+                    isWritable: isWritable,
+                    inDelegateOutcall: inDelegateOutcall,
+                    suspendedYields: suspendedYields,
+                    cancelledYields: cancelledYields,
+                    bufferedYieldIDs: bufferedYieldIDs,
+                    delegate: delegate,
+                    error: error
+                )
+
+            case .initial, .finished:
                 preconditionFailure("This should have already been handled by `yield()`")
 
             case .modifying:
@@ -1501,7 +1532,7 @@ extension NIOAsyncWriter {
 
                     self._state = .writerFinished(
                         isWritable: isWritable,
-                        inDelegateOutcall: inDelegateOutcall,
+                        inDelegateOutcall: false,
                         suspendedYields: .init(),
                         cancelledYields: cancelledYields,
                         bufferedYieldIDs: bufferedYieldIDs,

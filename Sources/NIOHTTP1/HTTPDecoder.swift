@@ -12,8 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_implementationOnly import CNIOLLHTTP
 import NIOCore
+
+#if compiler(>=6.1)
+private import CNIOLLHTTP
+#else
+@_implementationOnly import CNIOLLHTTP
+#endif
 
 extension UnsafeMutablePointer where Pointee == llhttp_t {
     /// Returns the `KeepAliveState` for the current message that is parsed.
@@ -541,8 +546,8 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
 
     /// Creates a new instance of `HTTPDecoder`.
     ///
-    /// - parameters:
-    ///     - leftOverBytesStrategy: The strategy to use when removing the decoder from the pipeline and an upgrade was,
+    /// - Parameters:
+    ///   - leftOverBytesStrategy: The strategy to use when removing the decoder from the pipeline and an upgrade was,
     ///                              detected. Note that this does not affect what happens on EOF.
     public convenience init(leftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes) {
         self.init(leftOverBytesStrategy: leftOverBytesStrategy, informationalResponseStrategy: .drop)
@@ -550,10 +555,10 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
 
     /// Creates a new instance of `HTTPDecoder`.
     ///
-    /// - parameters:
-    ///     - leftOverBytesStrategy: The strategy to use when removing the decoder from the pipeline and an upgrade was,
+    /// - Parameters:
+    ///   - leftOverBytesStrategy: The strategy to use when removing the decoder from the pipeline and an upgrade was,
     ///                              detected. Note that this does not affect what happens on EOF.
-    ///     - informationalResponseStrategy: Should informational responses (like http status 100) be forwarded or dropped.
+    ///   - informationalResponseStrategy: Should informational responses (like http status 100) be forwarded or dropped.
     ///                              Default is `.drop`. This property is only respected when decoding responses.
     public init(
         leftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes,
@@ -631,7 +636,7 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
         self.url = String(decoding: bytes, as: Unicode.UTF8.self)
     }
 
-    func didFinishHead(
+    fileprivate func didFinishHead(
         versionMajor: Int,
         versionMinor: Int,
         isUpgrade: Bool,
@@ -815,7 +820,7 @@ extension HTTPParserError {
     /// - Parameter fromCHTTPParserErrno: The error from the underlying library.
     /// - Returns: The corresponding `HTTPParserError`, or `nil` if there is no
     ///     corresponding error.
-    static func httpError(fromCHTTPParserErrno: llhttp_errno_t) -> HTTPParserError? {
+    fileprivate static func httpError(fromCHTTPParserErrno: llhttp_errno_t) -> HTTPParserError? {
         switch fromCHTTPParserErrno {
         case HPE_INTERNAL:
             return .invalidInternalState
@@ -874,7 +879,7 @@ extension HTTPMethod {
     ///
     /// - Parameter httpParserMethod: The method returned by `http_parser`.
     /// - Returns: The corresponding `HTTPMethod`.
-    static func from(httpParserMethod: llhttp_method) -> HTTPMethod {
+    fileprivate static func from(httpParserMethod: llhttp_method) -> HTTPMethod {
         switch httpParserMethod {
         case HTTP_DELETE:
             return .DELETE

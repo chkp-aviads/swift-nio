@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -20,6 +20,7 @@ import NIOCore
 import Dispatch
 #endif
 
+@usableFromInline
 struct NIORegistration: Registration {
     enum ChannelType {
         case serverSocketChannel(ServerSocketChannel)
@@ -31,9 +32,11 @@ struct NIORegistration: Registration {
     var channel: ChannelType
 
     /// The `SelectorEventSet` in which this `NIORegistration` is interested in.
+    @usableFromInline
     var interested: SelectorEventSet
 
     /// The registration ID for this `NIORegistration` used by the `Selector`.
+    @usableFromInline
     var registrationID: SelectorRegistrationID
 }
 
@@ -48,9 +51,6 @@ typealias ThreadInitializer = (NIOThread) -> Void
 /// all run their own `EventLoop`. Those threads will not be shut down until `shutdownGracefully` or
 /// `syncShutdownGracefully` is called.
 ///
-/// - note: It's good style to call `MultiThreadedEventLoopGroup.shutdownGracefully` or
-///         `MultiThreadedEventLoopGroup.syncShutdownGracefully` when you no longer need this `EventLoopGroup`. In
-///         many cases that is just before your program exits.
 /// - warning: Unit tests often spawn one `MultiThreadedEventLoopGroup` per unit test to force isolation between the
 ///            tests. In those cases it's important to shut the `MultiThreadedEventLoopGroup` down at the end of the
 ///            test. A good place to start a `MultiThreadedEventLoopGroup` is the `setUp` method of your `XCTestCase`
@@ -140,13 +140,13 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
 
     /// Creates a `MultiThreadedEventLoopGroup` instance which uses `numberOfThreads`.
     ///
-    /// - note: Don't forget to call `shutdownGracefully` or `syncShutdownGracefully` when you no longer need this
+    /// - Note: Don't forget to call `shutdownGracefully` or `syncShutdownGracefully` when you no longer need this
     ///         `EventLoopGroup`. If you forget to shut the `EventLoopGroup` down you will leak `numberOfThreads`
     ///         (kernel) threads which are costly resources. This is especially important in unit tests where one
     ///         `MultiThreadedEventLoopGroup` is started per test case.
     ///
     /// - arguments:
-    ///     - numberOfThreads: The number of `Threads` to use.
+    ///   - numberOfThreads: The number of `Threads` to use.
     public convenience init(numberOfThreads: Int) {
         self.init(
             numberOfThreads: numberOfThreads,
@@ -158,7 +158,7 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
 
     /// Creates a `MultiThreadedEventLoopGroup` instance which uses `numberOfThreads`.
     ///
-    /// - note: Don't forget to call `shutdownGracefully` or `syncShutdownGracefully` when you no longer need this
+    /// - Note: Don't forget to call `shutdownGracefully` or `syncShutdownGracefully` when you no longer need this
     ///         `EventLoopGroup`. If you forget to shut the `EventLoopGroup` down you will leak `numberOfThreads`
     ///         (kernel) threads which are costly resources. This is especially important in unit tests where one
     ///         `MultiThreadedEventLoopGroup` is started per test case.
@@ -257,7 +257,7 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
     /// Creates a `MultiThreadedEventLoopGroup` instance which uses the given `ThreadInitializer`s. One `NIOThread` per `ThreadInitializer` is created and used.
     ///
     /// - arguments:
-    ///     - threadInitializers: The `ThreadInitializer`s to use.
+    ///   - threadInitializers: The `ThreadInitializer`s to use.
     internal init(
         threadInitializers: [ThreadInitializer],
         canBeShutDown: Bool,
@@ -292,7 +292,7 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
 
     /// Returns the `EventLoop` for the calling thread.
     ///
-    /// - returns: The current `EventLoop` for the calling thread or `nil` if none is assigned to the thread.
+    /// - Returns: The current `EventLoop` for the calling thread or `nil` if none is assigned to the thread.
     public static var currentEventLoop: EventLoop? {
         self.currentSelectableEventLoop
     }
@@ -303,7 +303,7 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
 
     /// Returns an `EventLoopIterator` over the `EventLoop`s in this `MultiThreadedEventLoopGroup`.
     ///
-    /// - returns: `EventLoopIterator`
+    /// - Returns: `EventLoopIterator`
     public func makeIterator() -> EventLoopIterator {
         EventLoopIterator(self.eventLoops)
     }
@@ -312,14 +312,14 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
     ///
     /// `MultiThreadedEventLoopGroup` uses _round robin_ across all its `EventLoop`s to select the next one.
     ///
-    /// - returns: The next `EventLoop` to use.
+    /// - Returns: The next `EventLoop` to use.
     public func next() -> EventLoop {
         eventLoops[abs(index.loadThenWrappingIncrement(ordering: .relaxed) % eventLoops.count)]
     }
 
     /// Returns the current `EventLoop` if we are on an `EventLoop` of this `MultiThreadedEventLoopGroup` instance.
     ///
-    /// - returns: The `EventLoop`.
+    /// - Returns: The `EventLoop`.
     public func any() -> EventLoop {
         if let loop = Self.currentSelectableEventLoop,
             // We are on `loop`'s thread, so we may ask for the its parent group.
@@ -340,7 +340,7 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
     /// Even though calling `shutdownGracefully` more than once should be avoided, it is safe to do so and execution
     /// of the `handler` is guaranteed.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///    - queue: The `DispatchQueue` to run `handler` on when the shutdown operation completes.
     ///    - handler: The handler which is called after the shutdown operation completes. The parameter will be `nil`
     ///               on success and contain the `Error` otherwise.
@@ -447,8 +447,8 @@ public final class MultiThreadedEventLoopGroup: EventLoopGroup {
     /// This function will not return until the `EventLoop` has stopped. You can initiate stopping the `EventLoop` by
     /// calling `eventLoop.shutdownGracefully` which will eventually make this function return.
     ///
-    /// - parameters:
-    ///     - callback: Called _on_ the `EventLoop` that the calling thread was converted to, providing you the
+    /// - Parameters:
+    ///   - callback: Called _on_ the `EventLoop` that the calling thread was converted to, providing you the
     ///                 `EventLoop` reference. Just like usually on the `EventLoop`, do not block in `callback`.
     public static func withCurrentThreadAsEventLoop(_ callback: @escaping (EventLoop) -> Void) {
         let callingThread = NIOThread.current
@@ -568,6 +568,7 @@ extension ScheduledTask: Comparable {
 }
 
 extension NIODeadline {
+    @inlinable
     func readyIn(_ target: NIODeadline) -> TimeAmount {
         if self < target {
             return .nanoseconds(0)

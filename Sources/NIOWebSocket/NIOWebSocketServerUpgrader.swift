@@ -15,6 +15,7 @@
 import CNIOSHA1
 import NIOCore
 import NIOHTTP1
+import _NIOBase64
 
 let magicWebSocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -83,16 +84,16 @@ public final class NIOWebSocketServerUpgrader: HTTPServerProtocolUpgrader, @unch
 
     /// Create a new `NIOWebSocketServerUpgrader`.
     ///
-    /// - parameters:
-    ///     - automaticErrorHandling: Whether the pipeline should automatically handle protocol
+    /// - Parameters:
+    ///   - automaticErrorHandling: Whether the pipeline should automatically handle protocol
     ///         errors by sending error responses and closing the connection. Defaults to `true`,
     ///         may be set to `false` if the user wishes to handle their own errors.
-    ///     - shouldUpgrade: A callback that determines whether the websocket request should be
+    ///   - shouldUpgrade: A callback that determines whether the websocket request should be
     ///         upgraded. This callback is responsible for creating a `HTTPHeaders` object with
     ///         any headers that it needs on the response *except for* the `Upgrade`, `Connection`,
     ///         and `Sec-WebSocket-Accept` headers, which this upgrader will handle. Should return
     ///         an `EventLoopFuture` containing `nil` if the upgrade should be refused.
-    ///     - upgradePipelineHandler: A function that will be called once the upgrade response is
+    ///   - upgradePipelineHandler: A function that will be called once the upgrade response is
     ///         flushed, and that is expected to mutate the `Channel` appropriately to handle the
     ///         websocket protocol. This only needs to add the user handlers: the
     ///         `WebSocketFrameEncoder` and `WebSocketFrameDecoder` will have been added to the
@@ -113,20 +114,20 @@ public final class NIOWebSocketServerUpgrader: HTTPServerProtocolUpgrader, @unch
 
     /// Create a new `NIOWebSocketServerUpgrader`.
     ///
-    /// - parameters:
-    ///     - maxFrameSize: The maximum frame size the decoder is willing to tolerate from the
+    /// - Parameters:
+    ///   - maxFrameSize: The maximum frame size the decoder is willing to tolerate from the
     ///         remote peer. WebSockets in principle allows frame sizes up to `2**64` bytes, but
     ///         this is an objectively unreasonable maximum value (on AMD64 systems it is not
     ///         possible to even. Users may set this to any value up to `UInt32.max`.
-    ///     - automaticErrorHandling: Whether the pipeline should automatically handle protocol
+    ///   - automaticErrorHandling: Whether the pipeline should automatically handle protocol
     ///         errors by sending error responses and closing the connection. Defaults to `true`,
     ///         may be set to `false` if the user wishes to handle their own errors.
-    ///     - shouldUpgrade: A callback that determines whether the websocket request should be
+    ///   - shouldUpgrade: A callback that determines whether the websocket request should be
     ///         upgraded. This callback is responsible for creating a `HTTPHeaders` object with
     ///         any headers that it needs on the response *except for* the `Upgrade`, `Connection`,
     ///         and `Sec-WebSocket-Accept` headers, which this upgrader will handle. Should return
     ///         an `EventLoopFuture` containing `nil` if the upgrade should be refused.
-    ///     - upgradePipelineHandler: A function that will be called once the upgrade response is
+    ///   - upgradePipelineHandler: A function that will be called once the upgrade response is
     ///         flushed, and that is expected to mutate the `Channel` appropriately to handle the
     ///         websocket protocol. This only needs to add the user handlers: the
     ///         `WebSocketFrameEncoder` and `WebSocketFrameDecoder` will have been added to the
@@ -220,7 +221,7 @@ public final class NIOTypedWebSocketServerUpgrader<UpgradeResult: Sendable>: NIO
     ///         remote peer. WebSockets in principle allows frame sizes up to `2**64` bytes, but
     ///         this is an objectively unreasonable maximum value (on AMD64 systems it is not
     ///         possible to even. Users may set this to any value up to `UInt32.max`.
-    ///   - automaticErrorHandling: Whether the pipeline should automatically handle protocol
+    ///   - enableAutomaticErrorHandling: Whether the pipeline should automatically handle protocol
     ///         errors by sending error responses and closing the connection. Defaults to `true`,
     ///         may be set to `false` if the user wishes to handle their own errors.
     ///   - shouldUpgrade: A callback that determines whether the websocket request should be
@@ -228,11 +229,9 @@ public final class NIOTypedWebSocketServerUpgrader<UpgradeResult: Sendable>: NIO
     ///         any headers that it needs on the response *except for* the `Upgrade`, `Connection`,
     ///         and `Sec-WebSocket-Accept` headers, which this upgrader will handle. Should return
     ///         an `EventLoopFuture` containing `nil` if the upgrade should be refused.
-    ///   - enableAutomaticErrorHandling: A function that will be called once the upgrade response is
-    ///         flushed, and that is expected to mutate the `Channel` appropriately to handle the
-    ///         websocket protocol. This only needs to add the user handlers: the
     ///         `WebSocketFrameEncoder` and `WebSocketFrameDecoder` will have been added to the
-    ///         pipeline automatically.
+    ///         pipeline automatically.to WebSocket protocol errors. Default is true.
+    ///   - upgradePipelineHandler: called once the upgrade was successful.
     public init(
         maxFrameSize: Int = 1 << 14,
         enableAutomaticErrorHandling: Bool = true,
@@ -305,7 +304,7 @@ private func _buildUpgradeResponse(
                 var hasher = SHA1()
                 hasher.update(string: key)
                 hasher.update(string: magicWebSocketGUID)
-                acceptValue = String(base64Encoding: hasher.finish())
+                acceptValue = String(_base64Encoding: hasher.finish())
             }
 
             extraHeaders.replaceOrAdd(name: "Upgrade", value: "websocket")

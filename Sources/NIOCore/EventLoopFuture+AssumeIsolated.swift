@@ -14,8 +14,14 @@
 
 /// A struct wrapping an ``EventLoop`` that ensures all calls to any method on this struct
 /// are coming from the event loop.
-@usableFromInline
-struct IsolatedEventLoop {
+///
+/// This type is explicitly not `Sendable`. It may only be constructed on an event loop,
+/// using ``EventLoop/assumeIsolated()``, and may not subsequently be passed to other isolation
+/// domains.
+///
+/// Using this type relaxes the need to have the closures for ``EventLoop/execute(_:)``,
+/// ``EventLoop/submit(_:)``, and ``EventLoop/scheduleTask(in:_:)`` to be `@Sendable`.
+public struct NIOIsolatedEventLoop {
     @usableFromInline
     let _wrapped: EventLoop
 
@@ -25,9 +31,9 @@ struct IsolatedEventLoop {
     }
 
     /// Submit a given task to be executed by the `EventLoop`
+    @available(*, noasync)
     @inlinable
-    func execute(_ task: @escaping () -> Void) {
-        self._wrapped.assertInEventLoop()
+    public func execute(_ task: @escaping () -> Void) {
         let unsafeTransfer = UnsafeTransfer(task)
         self._wrapped.execute {
             unsafeTransfer.wrappedValue()
@@ -36,12 +42,12 @@ struct IsolatedEventLoop {
 
     /// Submit a given task to be executed by the `EventLoop`. Once the execution is complete the returned `EventLoopFuture` is notified.
     ///
-    /// - parameters:
-    ///     - task: The closure that will be submitted to the `EventLoop` for execution.
-    /// - returns: `EventLoopFuture` that is notified once the task was executed.
+    /// - Parameters:
+    ///   - task: The closure that will be submitted to the `EventLoop` for execution.
+    /// - Returns: `EventLoopFuture` that is notified once the task was executed.
+    @available(*, noasync)
     @inlinable
-    func submit<T>(_ task: @escaping () throws -> T) -> EventLoopFuture<T> {
-        self._wrapped.assertInEventLoop()
+    public func submit<T>(_ task: @escaping () throws -> T) -> EventLoopFuture<T> {
         let unsafeTransfer = UnsafeTransfer(task)
         return self._wrapped.submit {
             try unsafeTransfer.wrappedValue()
@@ -50,19 +56,20 @@ struct IsolatedEventLoop {
 
     /// Schedule a `task` that is executed by this `EventLoop` at the given time.
     ///
-    /// - parameters:
-    ///     - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - deadline: The time at which the task should run.
+    ///   - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the completion of the task.
     ///
-    /// - note: You can only cancel a task before it has started executing.
+    /// - Note: You can only cancel a task before it has started executing.
     @discardableResult
+    @available(*, noasync)
     @inlinable
-    func scheduleTask<T>(
+    public func scheduleTask<T>(
         deadline: NIODeadline,
         _ task: @escaping () throws -> T
     ) -> Scheduled<T> {
-        self._wrapped.assertInEventLoop()
         let unsafeTransfer = UnsafeTransfer(task)
         return self._wrapped.scheduleTask(deadline: deadline) {
             try unsafeTransfer.wrappedValue()
@@ -71,20 +78,21 @@ struct IsolatedEventLoop {
 
     /// Schedule a `task` that is executed by this `EventLoop` after the given amount of time.
     ///
-    /// - parameters:
-    ///     - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - delay: The time to wait before running the task.
+    ///   - task: The synchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the completion of the task.
     ///
-    /// - note: You can only cancel a task before it has started executing.
-    /// - note: The `in` value is clamped to a maximum when running on a Darwin-kernel.
+    /// - Note: You can only cancel a task before it has started executing.
+    /// - Note: The `in` value is clamped to a maximum when running on a Darwin-kernel.
     @discardableResult
+    @available(*, noasync)
     @inlinable
-    func scheduleTask<T>(
+    public func scheduleTask<T>(
         in delay: TimeAmount,
         _ task: @escaping () throws -> T
     ) -> Scheduled<T> {
-        self._wrapped.assertInEventLoop()
         let unsafeTransfer = UnsafeTransfer(task)
         return self._wrapped.scheduleTask(in: delay) {
             try unsafeTransfer.wrappedValue()
@@ -96,21 +104,24 @@ struct IsolatedEventLoop {
     /// - Note: The `T` must be `Sendable` since the isolation domains of the event loop future returned from `task` and
     /// this event loop might differ.
     ///
-    /// - parameters:
-    ///     - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
-    /// - returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
+    /// - Parameters:
+    ///   - deadline: The time at which we should run the asynchronous task.
+    ///   - file: The file in which the task is scheduled.
+    ///   - line: The line of the `file` in which the task is scheduled.
+    ///   - task: The asynchronous task to run. As with everything that runs on the `EventLoop`, it must not block.
+    /// - Returns: A `Scheduled` object which may be used to cancel the task if it has not yet run, or to wait
     ///            on the full execution of the task, including its returned `EventLoopFuture`.
     ///
-    /// - note: You can only cancel a task before it has started executing.
+    /// - Note: You can only cancel a task before it has started executing.
     @discardableResult
+    @available(*, noasync)
     @inlinable
-    func flatScheduleTask<T: Sendable>(
+    public func flatScheduleTask<T: Sendable>(
         deadline: NIODeadline,
         file: StaticString = #file,
         line: UInt = #line,
         _ task: @escaping () throws -> EventLoopFuture<T>
     ) -> Scheduled<T> {
-        self._wrapped.assertInEventLoop()
         let unsafeTransfer = UnsafeTransfer(task)
         return self._wrapped.flatScheduleTask(deadline: deadline, file: file, line: line) {
             try unsafeTransfer.wrappedValue()
@@ -119,25 +130,53 @@ struct IsolatedEventLoop {
 
     /// Returns the wrapped event loop.
     @inlinable
-    func nonisolated() -> any EventLoop {
+    public func nonisolated() -> any EventLoop {
         self._wrapped
     }
 }
+
 extension EventLoop {
     /// Assumes the calling context is isolated to the event loop.
-    @usableFromInline
-    func assumeIsolated() -> IsolatedEventLoop {
-        IsolatedEventLoop(self)
+    @inlinable
+    @available(*, noasync)
+    public func assumeIsolated() -> NIOIsolatedEventLoop {
+        self.preconditionInEventLoop()
+        return NIOIsolatedEventLoop(self)
+    }
+
+    /// Assumes the calling context is isolated to the event loop.
+    ///
+    /// This version of ``EventLoop/assumeIsolated()`` omits the runtime
+    /// isolation check in release builds and doesn't prevent you using it
+    /// from using it in async contexts.
+    @inlinable
+    public func assumeIsolatedUnsafeUnchecked() -> NIOIsolatedEventLoop {
+        self.assertInEventLoop()
+        return NIOIsolatedEventLoop(self)
     }
 }
+
+@available(*, unavailable)
+extension NIOIsolatedEventLoop: Sendable {}
 
 extension EventLoopFuture {
     /// A struct wrapping an ``EventLoopFuture`` that ensures all calls to any method on this struct
     /// are coming from the event loop of the future.
-    @usableFromInline
-    struct Isolated {
+    ///
+    /// This type is explicitly not `Sendable`. It may only be constructed on an event loop,
+    /// using ``EventLoopFuture/assumeIsolated()``, and may not subsequently be passed to other isolation
+    /// domains.
+    ///
+    /// Using this type relaxes the need to have the closures for the various ``EventLoopFuture``
+    /// callback-attaching functions be `Sendable`.
+    public struct Isolated {
         @usableFromInline
         let _wrapped: EventLoopFuture<Value>
+
+        @inlinable
+        init(_wrapped: EventLoopFuture<Value>) {
+            self._wrapped = _wrapped
+        }
 
         /// When the current `EventLoopFuture<Value>` is fulfilled, run the provided callback,
         /// which will provide a new `EventLoopFuture`.
@@ -160,21 +199,39 @@ extension EventLoopFuture {
         /// }
         /// ```
         ///
+        /// Note that the returned ``EventLoopFuture`` still needs a `Sendable` wrapped value,
+        /// as it may have been created on a different event loop.
+        ///
         /// Note: In a sense, the `EventLoopFuture<NewValue>` is returned before it's created.
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
         ///         a new `EventLoopFuture`.
-        /// - returns: A future that will receive the eventual value.
+        /// - Returns: A future that will receive the eventual value.
         @inlinable
-        func flatMap<NewValue: Sendable>(
+        @available(*, noasync)
+        public func flatMap<NewValue: Sendable>(
             _ callback: @escaping (Value) -> EventLoopFuture<NewValue>
         ) -> EventLoopFuture<NewValue>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.flatMap {
-                unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<NewValue>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let t):
+                    let futureU = callback(t)
+                    if futureU.eventLoop.inEventLoop {
+                        return futureU._addCallback {
+                            next._setValue(value: futureU._value!)
+                        }
+                    } else {
+                        futureU.cascade(to: next)
+                        return CallbackList()
+                    }
+                case .failure(let error):
+                    return next._setValue(value: .failure(error))
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// When the current `EventLoopFuture<Value>` is fulfilled, run the provided callback, which
@@ -187,19 +244,31 @@ extension EventLoopFuture {
         ///
         /// If your callback function throws, the returned `EventLoopFuture` will error.
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
         ///         a new value lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the eventual value.
+        /// - Returns: A future that will receive the eventual value.
         @inlinable
-        func flatMapThrowing<NewValue>(
+        @available(*, noasync)
+        public func flatMapThrowing<NewValue>(
             _ callback: @escaping (Value) throws -> NewValue
         ) -> EventLoopFuture<NewValue>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.flatMapThrowing {
-                try unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<NewValue>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let t):
+                    do {
+                        let r = try callback(t)
+                        return next._setValue(value: .success(r))
+                    } catch {
+                        return next._setValue(value: .failure(error))
+                    }
+                case .failure(let e):
+                    return next._setValue(value: .failure(e))
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// When the current `EventLoopFuture<Value>` is in an error state, run the provided callback, which
@@ -212,19 +281,31 @@ extension EventLoopFuture {
         ///
         /// If your callback function throws, the returned `EventLoopFuture` will error.
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
         ///         a new value lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the eventual value or a rethrown error.
+        /// - Returns: A future that will receive the eventual value or a rethrown error.
         @inlinable
-        func flatMapErrorThrowing(
+        @available(*, noasync)
+        public func flatMapErrorThrowing(
             _ callback: @escaping (Error) throws -> Value
         ) -> EventLoopFuture<Value>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.flatMapErrorThrowing {
-                try unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<Value>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let t):
+                    return next._setValue(value: .success(t))
+                case .failure(let e):
+                    do {
+                        let r = try callback(e)
+                        return next._setValue(value: .success(r))
+                    } catch {
+                        return next._setValue(value: .failure(error))
+                    }
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// When the current `EventLoopFuture<Value>` is fulfilled, run the provided callback, which
@@ -249,19 +330,26 @@ extension EventLoopFuture {
         /// }
         /// ```
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
         ///         a new value lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the eventual value.
+        /// - Returns: A future that will receive the eventual value.
         @inlinable
-        func map<NewValue>(
+        @available(*, noasync)
+        public func map<NewValue>(
             _ callback: @escaping (Value) -> (NewValue)
         ) -> EventLoopFuture<NewValue>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.map {
-                unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            if NewValue.self == Value.self && NewValue.self == Void.self {
+                self.whenSuccess(callback as! (Value) -> Void)
+                return self as! EventLoopFuture<NewValue>.Isolated
+            } else {
+                let next = EventLoopPromise<NewValue>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+                let base = self._wrapped
+                base._whenCompleteIsolated {
+                    next._setValue(value: base._value!.map(callback))
+                }
+                return next.futureResult.assumeIsolatedUnsafeUnchecked()
+            }
         }
 
         /// When the current `EventLoopFuture<Value>` is in an error state, run the provided callback, which
@@ -274,19 +362,34 @@ extension EventLoopFuture {
         /// - Note: The `Value` must be `Sendable` since the isolation domains of this future and the future returned from the callback
         /// might differ i.e. they might be bound to different event loops.
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
         ///         a new value lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the recovered value.
+        /// - Returns: A future that will receive the recovered value.
         @inlinable
-        func flatMapError(
+        @available(*, noasync)
+        public func flatMapError(
             _ callback: @escaping (Error) -> EventLoopFuture<Value>
         ) -> EventLoopFuture<Value>.Isolated where Value: Sendable {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.flatMapError {
-                unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<Value>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let t):
+                    return next._setValue(value: .success(t))
+                case .failure(let e):
+                    let t = callback(e)
+                    if t.eventLoop.inEventLoop {
+                        return t._addCallback {
+                            next._setValue(value: t._value!)
+                        }
+                    } else {
+                        t.cascade(to: next)
+                        return CallbackList()
+                    }
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// When the current `EventLoopFuture<Value>` is fulfilled, run the provided callback, which
@@ -298,19 +401,31 @@ extension EventLoopFuture {
         /// performs a simple data transformation that can potentially error.
         ///
         ///
-        /// - parameters:
-        ///     - body: Function that will receive the value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - body: Function that will receive the value of this `EventLoopFuture` and return
         ///         a new value or error lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the eventual value.
+        /// - Returns: A future that will receive the eventual value.
         @inlinable
-        func flatMapResult<NewValue, SomeError: Error>(
+        @available(*, noasync)
+        public func flatMapResult<NewValue, SomeError: Error>(
             _ body: @escaping (Value) -> Result<NewValue, SomeError>
         ) -> EventLoopFuture<NewValue>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(body)
-            return self._wrapped.flatMapResult {
-                unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<NewValue>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let value):
+                    switch body(value) {
+                    case .success(let newValue):
+                        return next._setValue(value: .success(newValue))
+                    case .failure(let error):
+                        return next._setValue(value: .failure(error))
+                    }
+                case .failure(let e):
+                    return next._setValue(value: .failure(e))
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// When the current `EventLoopFuture<Value>` is in an error state, run the provided callback, which
@@ -321,19 +436,26 @@ extension EventLoopFuture {
         /// event loop. `recover` is intended for use when you have the ability to synchronously
         /// recover from errors.
         ///
-        /// - parameters:
-        ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+        /// - Parameters:
+        ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
         ///         a new value lifted into a new `EventLoopFuture`.
-        /// - returns: A future that will receive the recovered value.
+        /// - Returns: A future that will receive the recovered value.
         @inlinable
-        func recover(
+        @available(*, noasync)
+        public func recover(
             _ callback: @escaping (Error) -> Value
         ) -> EventLoopFuture<Value>.Isolated {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.recover {
-                unsafeTransfer.wrappedValue($0)
-            }.assumeIsolated()
+            let next = EventLoopPromise<Value>.makeUnleakablePromise(eventLoop: self._wrapped.eventLoop)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                switch base._value! {
+                case .success(let t):
+                    return next._setValue(value: .success(t))
+                case .failure(let e):
+                    return next._setValue(value: .success(callback(e)))
+                }
+            }
+            return next.futureResult.assumeIsolatedUnsafeUnchecked()
         }
 
         /// Adds an observer callback to this `EventLoopFuture` that is called when the
@@ -344,14 +466,17 @@ extension EventLoopFuture {
         /// If you find yourself passing the results from this `EventLoopFuture` to a new `EventLoopPromise`
         /// in the body of this function, consider using `cascade` instead.
         ///
-        /// - parameters:
-        ///     - callback: The callback that is called with the successful result of the `EventLoopFuture`.
+        /// - Parameters:
+        ///   - callback: The callback that is called with the successful result of the `EventLoopFuture`.
         @inlinable
-        func whenSuccess(_ callback: @escaping (Value) -> Void) {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.whenSuccess {
-                unsafeTransfer.wrappedValue($0)
+        @available(*, noasync)
+        public func whenSuccess(_ callback: @escaping (Value) -> Void) {
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                if case .success(let t) = base._value! {
+                    callback(t)
+                }
+                return CallbackList()
             }
         }
 
@@ -363,48 +488,50 @@ extension EventLoopFuture {
         /// If you find yourself passing the results from this `EventLoopFuture` to a new `EventLoopPromise`
         /// in the body of this function, consider using `cascade` instead.
         ///
-        /// - parameters:
-        ///     - callback: The callback that is called with the failed result of the `EventLoopFuture`.
+        /// - Parameters:
+        ///   - callback: The callback that is called with the failed result of the `EventLoopFuture`.
         @inlinable
-        func whenFailure(_ callback: @escaping (Error) -> Void) {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.whenFailure {
-                unsafeTransfer.wrappedValue($0)
+        @available(*, noasync)
+        public func whenFailure(_ callback: @escaping (Error) -> Void) {
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                if case .failure(let e) = base._value! {
+                    callback(e)
+                }
+                return CallbackList()
             }
         }
 
         /// Adds an observer callback to this `EventLoopFuture` that is called when the
         /// `EventLoopFuture` has any result.
         ///
-        /// - parameters:
-        ///     - callback: The callback that is called when the `EventLoopFuture` is fulfilled.
+        /// - Parameters:
+        ///   - callback: The callback that is called when the `EventLoopFuture` is fulfilled.
         @inlinable
-        func whenComplete(
+        @available(*, noasync)
+        public func whenComplete(
             _ callback: @escaping (Result<Value, Error>) -> Void
         ) {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.whenComplete {
-                unsafeTransfer.wrappedValue($0)
+            let base = self._wrapped
+            base._whenCompleteIsolated {
+                callback(base._value!)
+                return CallbackList()
             }
         }
 
         /// Adds an observer callback to this `EventLoopFuture` that is called when the
         /// `EventLoopFuture` has any result.
         ///
-        /// - parameters:
-        ///     - callback: the callback that is called when the `EventLoopFuture` is fulfilled.
-        /// - returns: the current `EventLoopFuture`
+        /// - Parameters:
+        ///   - callback: the callback that is called when the `EventLoopFuture` is fulfilled.
+        /// - Returns: the current `EventLoopFuture`
         @inlinable
-        func always(
+        @available(*, noasync)
+        public func always(
             _ callback: @escaping (Result<Value, Error>) -> Void
-        ) -> EventLoopFuture<Value> {
-            self._wrapped.eventLoop.assertInEventLoop()
-            let unsafeTransfer = UnsafeTransfer(callback)
-            return self._wrapped.always {
-                unsafeTransfer.wrappedValue($0)
-            }
+        ) -> EventLoopFuture<Value>.Isolated {
+            self.whenComplete { result in callback(result) }
+            return self
         }
 
         /// Unwrap an `EventLoopFuture` where its type parameter is an `Optional`.
@@ -415,11 +542,12 @@ extension EventLoopFuture {
         /// promise.futureResult.unwrap(orReplace: 42).wait()
         /// ```
         ///
-        /// - parameters:
-        ///     - orReplace: the value of the returned `EventLoopFuture` when then resolved future's value is `Optional.some()`.
-        /// - returns: an new `EventLoopFuture` with new type parameter `NewValue` and the value passed in the `orReplace` parameter.
+        /// - Parameters:
+        ///   - replacement: the value of the returned `EventLoopFuture` when then resolved future's value is `Optional.some()`.
+        /// - Returns: an new `EventLoopFuture` with new type parameter `NewValue` and the value passed in the `orReplace` parameter.
         @inlinable
-        func unwrap<NewValue>(
+        @available(*, noasync)
+        public func unwrap<NewValue>(
             orReplace replacement: NewValue
         ) -> EventLoopFuture<NewValue>.Isolated where Value == NewValue? {
             self.map { (value) -> NewValue in
@@ -439,13 +567,14 @@ extension EventLoopFuture {
         /// promise.futureResult.unwrap(orElse: { x * 2 }).wait()
         /// ```
         ///
-        /// - parameters:
-        ///     - orElse: a closure that returns the value of the returned `EventLoopFuture` when then resolved future's value
+        /// - Parameters:
+        ///   - callback: a closure that returns the value of the returned `EventLoopFuture` when then resolved future's value
         ///         is `Optional.some()`.
-        /// - returns: an new `EventLoopFuture` with new type parameter `NewValue` and with the value returned by the closure
+        /// - Returns: an new `EventLoopFuture` with new type parameter `NewValue` and with the value returned by the closure
         ///     passed in the `orElse` parameter.
         @inlinable
-        func unwrap<NewValue>(
+        @available(*, noasync)
+        public func unwrap<NewValue>(
             orElse callback: @escaping () -> NewValue
         ) -> EventLoopFuture<NewValue>.Isolated where Value == NewValue? {
             self.map { (value) -> NewValue in
@@ -458,34 +587,72 @@ extension EventLoopFuture {
 
         /// Returns the wrapped event loop future.
         @inlinable
-        func nonisolated() -> EventLoopFuture<Value> {
+        public func nonisolated() -> EventLoopFuture<Value> {
             self._wrapped
         }
     }
 
-    /// Assumes the calling context is isolated to the future's event loop.
-    @usableFromInline
-    func assumeIsolated() -> Isolated {
+    /// Returns a variant of this ``EventLoopFuture`` with less strict
+    /// `Sendable` requirements. Can only be called from on the
+    /// ``EventLoop`` to which this ``EventLoopFuture`` is bound, will crash
+    /// if that invariant fails to be met.
+    @inlinable
+    @available(*, noasync)
+    public func assumeIsolated() -> Isolated {
+        self.eventLoop.preconditionInEventLoop()
+        return Isolated(_wrapped: self)
+    }
+
+    /// Returns a variant of this ``EventLoopFuture`` with less strict
+    /// `Sendable` requirements. Can only be called from on the
+    /// ``EventLoop`` to which this ``EventLoopFuture`` is bound, will crash
+    /// if that invariant fails to be met in debug builds.
+    ///
+    /// This is an unsafe version of ``EventLoopFuture/assumeIsolated()`` which
+    /// omits the runtime check in release builds.
+    @inlinable
+    @available(*, noasync)
+    public func assumeIsolatedUnsafeUnchecked() -> Isolated {
         self.eventLoop.assertInEventLoop()
         return Isolated(_wrapped: self)
     }
 }
 
+@available(*, unavailable)
+extension EventLoopFuture.Isolated: Sendable {}
+
 extension EventLoopPromise {
     /// A struct wrapping an ``EventLoopPromise`` that ensures all calls to any method on this struct
     /// are coming from the event loop of the promise.
-    @usableFromInline
-    struct Isolated {
+    ///
+    /// This type is explicitly not `Sendable`. It may only be constructed on an event loop,
+    /// using ``EventLoopPromise/assumeIsolated()``, and may not subsequently be passed to other isolation
+    /// domains.
+    ///
+    /// Using this type relaxes the need to have the promise completion functions accept `Sendable`
+    /// values, as this type can only be handled on the ``EventLoop``.
+    ///
+    /// This type does not offer the full suite of completion functions that ``EventLoopPromise``
+    /// does, as many of those functions do not require `Sendable` values already. It only offers
+    /// versions for the functions that do require `Sendable` types. If you have an
+    /// ``EventLoopPromise/Isolated`` but need a regular ``EventLoopPromise``, use
+    /// ``EventLoopPromise/Isolated/nonisolated()`` to unwrap the value.
+    public struct Isolated {
         @usableFromInline
         let _wrapped: EventLoopPromise<Value>
 
+        @inlinable
+        init(_wrapped: EventLoopPromise<Value>) {
+            self._wrapped = _wrapped
+        }
+
         /// Deliver a successful result to the associated `EventLoopFuture<Value>` object.
         ///
-        /// - parameters:
-        ///     - value: The successful result of the operation.
+        /// - Parameters:
+        ///   - value: The successful result of the operation.
         @inlinable
-        func succeed(_ value: Value) {
-            self._wrapped.futureResult.eventLoop.assertInEventLoop()
+        @available(*, noasync)
+        public func succeed(_ value: Value) {
             self._wrapped._setValue(value: .success(value))._run()
         }
 
@@ -501,25 +668,46 @@ extension EventLoopPromise {
         /// }
         /// ```
         ///
-        /// - parameters:
-        ///     - result: The result which will be used to succeed or fail this promise.
+        /// - Parameters:
+        ///   - result: The result which will be used to succeed or fail this promise.
         @inlinable
-        func completeWith(_ result: Result<Value, Error>) {
-            self._wrapped.futureResult.eventLoop.assertInEventLoop()
+        @available(*, noasync)
+        public func completeWith(_ result: Result<Value, Error>) {
             self._wrapped._setValue(value: result)._run()
         }
 
         /// Returns the wrapped event loop promise.
         @inlinable
-        func nonisolated() -> EventLoopPromise<Value> {
+        public func nonisolated() -> EventLoopPromise<Value> {
             self._wrapped
         }
     }
 
-    /// Assumes the calling context is isolated to the promise's event loop.
-    @usableFromInline
-    func assumeIsolated() -> Isolated {
+    /// Returns a variant of this ``EventLoopPromise`` with less strict
+    /// `Sendable` requirements. Can only be called from on the
+    /// ``EventLoop`` to which this ``EventLoopPromise`` is bound, will crash
+    /// if that invariant fails to be met.
+    @inlinable
+    @available(*, noasync)
+    public func assumeIsolated() -> Isolated {
+        self.futureResult.eventLoop.preconditionInEventLoop()
+        return Isolated(_wrapped: self)
+    }
+
+    /// Returns a variant of this ``EventLoopPromise`` with less strict
+    /// `Sendable` requirements. Can only be called from on the
+    /// ``EventLoop`` to which this ``EventLoopPromise`` is bound, will crash
+    /// if that invariant fails to be met.
+    ///
+    /// This is an unsafe version of ``EventLoopPromise/assumeIsolated()`` which
+    /// omits the runtime check in release builds and doesn't prevent you using it
+    /// from using it in async contexts.
+    @inlinable
+    public func assumeIsolatedUnsafeUnchecked() -> Isolated {
         self.futureResult.eventLoop.assertInEventLoop()
         return Isolated(_wrapped: self)
     }
 }
+
+@available(*, unavailable)
+extension EventLoopPromise.Isolated: Sendable {}

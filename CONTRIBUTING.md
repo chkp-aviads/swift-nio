@@ -5,7 +5,6 @@ your contribution to Apple and the community, and agree by submitting the patch
 that your contributions are licensed under the Apache 2.0 license (see
 `LICENSE.txt`).
 
-
 ## How to submit a bug report
 
 Please ensure to specify the following:
@@ -19,7 +18,6 @@ Please ensure to specify the following:
   * Swift version or the output of `swift --version`
   * OS version and the output of `uname -a`
   * Network configuration
-
 
 ### Example
 
@@ -89,17 +87,22 @@ SwiftNIO has been created to be high performance.  The integration tests cover s
 
 ### Formatting
 
-Try to keep your lines less than 120 characters long so github can correctly display your changes.
+Try to keep your lines less than 120 characters long so GitHub can correctly display your changes.
 
 SwiftNIO uses the [swift-format](https://github.com/swiftlang/swift-format) tool to bring consistency to code formatting.  There is a specific [.swift-format](./.swift-format) configuration file.  This will be checked and enforced on PRs.  Note that the check will run on the current most recent stable version target which may not match that in your own local development environment.
 
-If you want to apply the formatting to your local repo before you commit then you can either run [check-swift-format.sh](./scripts/check-swift-format.sh) which will use your current toolchain, or to match the CI checks exactly you can use `act` (see [act section](#act)):
+If you want to apply the formatting to your local repo before you commit then you can either run [check-swift-format.sh](https://github.com/swiftlang/github-workflows/blob/main/.github/workflows/scripts/check-swift-format.sh) which will use your current toolchain, or to match the CI checks exactly you can use `act` (see [act section](#act)):
 ```
-act --action-offline-mode --bind workflow_call -j format-check --input format_check_enabled=true
+act --action-offline-mode --bind workflow_call --job soundness --input format_check_enabled=true
+```
+
+If you're using a machine with an ARM64 architecture (such as an Apple Silicon Mac) then
+you'll also need to specify the container architecture:
+```
+act --container-architecture linux/amd64 --action-offline-mode --bind workflow_call --job soundness --input format_check_enabled=true
 ```
 
 This will run the format checks, binding to your local checkout so the edits made are to your own source.
-
 
 ### Extensibility
 
@@ -109,4 +112,4 @@ Try to make sure your code is robust to future extensions.  The public interface
 
 Please open a pull request at https://github.com/apple/swift-nio. Make sure the CI passes, and then wait for code review.
 
-After review you may be asked to make changes.  When you are ready, use the request re-review feature of github or mention the reviewers by name in a comment.
+After review you may be asked to make changes.  When you are ready, use the request re-review feature of GitHub or mention the reviewers by name in a comment.

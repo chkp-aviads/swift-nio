@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2023 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2023-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -106,12 +106,12 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
     ///
     /// - Parameters:
     ///   - httpEncoder: The ``HTTPResponseEncoder`` encoding responses from this handler and which will
-    ///     be removed from the pipeline once the upgrade response is sent. This is used to ensure
-    ///     that the pipeline will be in a clean state after upgrade.
-    ///  - extraHTTPHandlers: Any other handlers that are directly related to handling HTTP. At the very least
-    ///     this should include the `HTTPDecoder`, but should also include any other handler that cannot tolerate
-    ///     receiving non-HTTP data.
-    ///  - upgradeConfiguration: The upgrade configuration.
+    ///   be removed from the pipeline once the upgrade response is sent. This is used to ensure
+    ///   that the pipeline will be in a clean state after upgrade.
+    ///   - extraHTTPHandlers: Any other handlers that are directly related to handling HTTP. At the very least
+    ///   this should include the `HTTPDecoder`, but should also include any other handler that cannot tolerate
+    ///   receiving non-HTTP data.
+    ///   - upgradeConfiguration: The upgrade configuration.
     public init(
         httpEncoder: HTTPResponseEncoder,
         extraHTTPHandlers: [RemovableChannelHandler],
@@ -154,7 +154,27 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
         }
     }
 
+    public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        switch event {
+        case let evt as ChannelEvent where evt == ChannelEvent.inputClosed:
+            // The remote peer half-closed the channel during the upgrade. Should we close the other side
+            switch self.stateMachine.inputClosed() {
+            case .close:
+                context.close(promise: nil)
+                self.upgradeResultPromise.fail(ChannelError.inputClosed)
+            case .continue:
+                break
+            case .fireInputClosedEvent:
+                context.fireUserInboundEventTriggered(event)
+            }
+
+        default:
+            context.fireUserInboundEventTriggered(event)
+        }
+    }
+
     private func channelRead(context: ChannelHandlerContext, requestPart: HTTPServerRequestPart) {
+        let loopBoundContext = context.loopBound
         switch self.stateMachine.channelReadRequestPart(requestPart) {
         case .failUpgradePromise(let error):
             self.upgradeResultPromise.fail(error)
@@ -163,6 +183,7 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
             self.notUpgradingCompletionHandler(context.channel)
                 .hop(to: context.eventLoop)
                 .whenComplete { result in
+                    let context = loopBoundContext.value
                     self.upgradingHandlerCompleted(context: context, result, requestHeadAndProtocol: nil)
                 }
 
@@ -175,6 +196,7 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
                 allHeaderNames: allHeaderNames,
                 connectionHeader: connectionHeader
             ).whenComplete { result in
+                let context = loopBoundContext.value
                 context.eventLoop.assertInEventLoop()
                 self.findingUpgradeCompleted(context: context, requestHead: head, result)
             }
@@ -278,6 +300,7 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
             )
         }
 
+        let loopBoundContext = context.loopBound
         let responseHeaders = self.buildUpgradeHeaders(protocol: proto)
         return upgrader.buildUpgradeResponse(
             channel: context.channel,
@@ -288,6 +311,7 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
         .map { (upgrader, $0, proto) }
         .flatMapError { error in
             // No upgrade here. We want to fire the error down the pipeline, and then try another loop iteration.
+            let context = loopBoundContext.value
             context.fireErrorCaught(error)
             return self.handleUpgradeForProtocol(
                 context: context,
@@ -320,9 +344,11 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
             )
 
         case .runNotUpgradingInitializer:
+            let loopBoundContext = context.loopBound
             self.notUpgradingCompletionHandler(context.channel)
                 .hop(to: context.eventLoop)
                 .whenComplete { result in
+                    let context = loopBoundContext.value
                     self.upgradingHandlerCompleted(context: context, result, requestHeadAndProtocol: nil)
                 }
 
@@ -357,14 +383,19 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
         // internal handler, then call the user code, and then finally when the user code is done we do
         // our final cleanup steps, namely we replay the received data we buffered in the meantime and
         // then remove ourselves from the pipeline.
-        self.removeExtraHandlers(context: context).flatMap {
-            self.sendUpgradeResponse(context: context, responseHeaders: responseHeaders)
+        let channel = context.channel
+        let pipeline = context.pipeline
+        let loopBoundContext = context.loopBound
+        self.removeExtraHandlers(pipeline: pipeline).flatMap {
+            let context = loopBoundContext.value
+            return self.sendUpgradeResponse(context: context, responseHeaders: responseHeaders)
         }.flatMap {
-            context.pipeline.syncOperations.removeHandler(self.httpEncoder)
+            pipeline.syncOperations.removeHandler(self.httpEncoder)
         }.flatMap { () -> EventLoopFuture<UpgradeResult> in
-            upgrader.upgrade(channel: context.channel, upgradeRequest: requestHead)
+            upgrader.upgrade(channel: channel, upgradeRequest: requestHead)
         }.hop(to: context.eventLoop)
             .whenComplete { result in
+                let context = loopBoundContext.value
                 self.upgradingHandlerCompleted(context: context, result, requestHeadAndProtocol: (requestHead, proto))
             }
     }
@@ -385,20 +416,23 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
     }
 
     /// Removes any extra HTTP-related handlers from the channel pipeline.
-    private func removeExtraHandlers(context: ChannelHandlerContext) -> EventLoopFuture<Void> {
+    private func removeExtraHandlers(pipeline: ChannelPipeline) -> EventLoopFuture<Void> {
         guard self.extraHTTPHandlers.count > 0 else {
-            return context.eventLoop.makeSucceededFuture(())
+            return pipeline.eventLoop.makeSucceededFuture(())
         }
 
         return .andAllSucceed(
-            self.extraHTTPHandlers.map { context.pipeline.removeHandler($0) },
-            on: context.eventLoop
+            self.extraHTTPHandlers.map { pipeline.removeHandler($0) },
+            on: pipeline.eventLoop
         )
     }
 
     private func unbuffer(context: ChannelHandlerContext) {
         while true {
             switch self.stateMachine.unbuffer() {
+            case .close:
+                context.close(promise: nil)
+
             case .fireChannelRead(let data):
                 context.fireChannelRead(data)
 
@@ -406,6 +440,9 @@ public final class NIOTypedHTTPServerUpgradeHandler<UpgradeResult: Sendable>: Ch
                 context.fireChannelReadComplete()
                 context.pipeline.removeHandler(self, promise: nil)
                 return
+
+            case .fireInputClosedEvent:
+                context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
             }
         }
     }

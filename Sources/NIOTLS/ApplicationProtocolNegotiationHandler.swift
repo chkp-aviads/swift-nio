@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -119,19 +119,23 @@ public final class ApplicationProtocolNegotiationHandler: ChannelInboundHandler,
 
     private func invokeUserClosure(context: ChannelHandlerContext, result: ALPNResult) {
         let switchFuture = self.completionHandler(result, context.channel)
+        let loopBoundSelfAndContext = NIOLoopBound((self, context), eventLoop: context.eventLoop)
 
         switchFuture
             .hop(to: context.eventLoop)
             .whenComplete { result in
+                let (`self`, context) = loopBoundSelfAndContext.value
                 self.userFutureCompleted(context: context, result: result)
             }
     }
 
     private func userFutureCompleted(context: ChannelHandlerContext, result: Result<Void, Error>) {
+        context.eventLoop.assertInEventLoop()
+
         switch self.stateMachine.userFutureCompleted(with: result) {
         case .fireErrorCaughtAndRemoveHandler(let error):
             context.fireErrorCaught(error)
-            context.pipeline.removeHandler(self, promise: nil)
+            context.pipeline.syncOperations.removeHandler(self, promise: nil)
 
         case .fireErrorCaughtAndStartUnbuffering(let error):
             context.fireErrorCaught(error)
@@ -141,7 +145,7 @@ public final class ApplicationProtocolNegotiationHandler: ChannelInboundHandler,
             self.unbuffer(context: context)
 
         case .removeHandler:
-            context.pipeline.removeHandler(self, promise: nil)
+            context.pipeline.syncOperations.removeHandler(self, promise: nil)
 
         case .none:
             break
@@ -149,6 +153,8 @@ public final class ApplicationProtocolNegotiationHandler: ChannelInboundHandler,
     }
 
     private func unbuffer(context: ChannelHandlerContext) {
+        context.eventLoop.assertInEventLoop()
+
         while true {
             switch self.stateMachine.unbuffer() {
             case .fireChannelRead(let data):
@@ -156,7 +162,7 @@ public final class ApplicationProtocolNegotiationHandler: ChannelInboundHandler,
 
             case .fireChannelReadCompleteAndRemoveHandler:
                 context.fireChannelReadComplete()
-                context.pipeline.removeHandler(self, promise: nil)
+                context.pipeline.syncOperations.removeHandler(self, promise: nil)
                 return
             }
         }

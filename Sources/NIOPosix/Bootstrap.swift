@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -11,6 +11,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+import CNIOLinux
 import NIOCore
 
 #if os(Windows)
@@ -94,8 +95,8 @@ public final class ServerBootstrap {
     /// `MultiThreadedEventLoopGroup.next`. See `init(validatingGroup:childGroup:)` for a fallible initializer for
     /// situations where it's impossible to tell ahead of time if the `EventLoopGroup`s are compatible or not.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
     public convenience init(group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             preconditionFailure(
@@ -113,9 +114,9 @@ public final class ServerBootstrap {
     /// `MultiThreadedEventLoopGroup.next`. See `init(validatingGroup:childGroup:)` for a fallible initializer for
     /// situations where it's impossible to tell ahead of time if the `EventLoopGroup`s are compatible or not.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
-    ///     - childGroup: The `EventLoopGroup` to run the accepted `SocketChannel`s on.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
+    ///   - childGroup: The `EventLoopGroup` to run the accepted `SocketChannel`s on.
     public convenience init(group: EventLoopGroup, childGroup: EventLoopGroup) {
         guard
             NIOOnSocketsBootstraps.isCompatible(group: group) && NIOOnSocketsBootstraps.isCompatible(group: childGroup)
@@ -133,9 +134,9 @@ public final class ServerBootstrap {
     /// Create a `ServerBootstrap` on the `EventLoopGroup` `group` which accepts `Channel`s on `childGroup`, validating
     /// that the `EventLoopGroup`s are compatible with `ServerBootstrap`.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
-    ///     - childGroup: The `EventLoopGroup` to run the accepted `SocketChannel`s on. If `nil`, `group` is used.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use for the `bind` of the `ServerSocketChannel` and to accept new `SocketChannel`s with.
+    ///   - childGroup: The `EventLoopGroup` to run the accepted `SocketChannel`s on. If `nil`, `group` is used.
     public init?(validatingGroup group: EventLoopGroup, childGroup: EventLoopGroup? = nil) {
         let childGroup = childGroup ?? group
         guard
@@ -159,10 +160,10 @@ public final class ServerBootstrap {
     ///
     /// The `ServerSocketChannel` uses the accepted `Channel`s as inbound messages.
     ///
-    /// - note: To set the initializer for the accepted `SocketChannel`s, look at `ServerBootstrap.childChannelInitializer`.
+    /// - Note: To set the initializer for the accepted `SocketChannel`s, look at `ServerBootstrap.childChannelInitializer`.
     ///
-    /// - parameters:
-    ///     - initializer: A closure that initializes the provided `Channel`.
+    /// - Parameters:
+    ///   - initializer: A closure that initializes the provided `Channel`.
     @preconcurrency
     public func serverChannelInitializer(_ initializer: @escaping @Sendable (Channel) -> EventLoopFuture<Void>) -> Self
     {
@@ -182,8 +183,8 @@ public final class ServerBootstrap {
     ///
     /// The accepted `Channel` will operate on `ByteBuffer` as inbound and `IOData` as outbound messages.
     ///
-    /// - parameters:
-    ///     - initializer: A closure that initializes the provided `Channel`.
+    /// - Parameters:
+    ///   - initializer: A closure that initializes the provided `Channel`.
     @preconcurrency
     public func childChannelInitializer(_ initializer: @escaping @Sendable (Channel) -> EventLoopFuture<Void>) -> Self {
         self.childChannelInit = initializer
@@ -192,11 +193,11 @@ public final class ServerBootstrap {
 
     /// Specifies a `ChannelOption` to be applied to the `ServerSocketChannel`.
     ///
-    /// - note: To specify options for the accepted `SocketChannel`s, look at `ServerBootstrap.childChannelOption`.
+    /// - Note: To specify options for the accepted `SocketChannel`s, look at `ServerBootstrap.childChannelOption`.
     ///
-    /// - parameters:
-    ///     - option: The option to be applied.
-    ///     - value: The value for the option.
+    /// - Parameters:
+    ///   - option: The option to be applied.
+    ///   - value: The value for the option.
     @inlinable
     public func serverChannelOption<Option: ChannelOption>(_ option: Option, value: Option.Value) -> Self {
         self._serverChannelOptions.append(key: option, value: value)
@@ -205,9 +206,9 @@ public final class ServerBootstrap {
 
     /// Specifies a `ChannelOption` to be applied to the accepted `SocketChannel`s.
     ///
-    /// - parameters:
-    ///     - option: The option to be applied.
-    ///     - value: The value for the option.
+    /// - Parameters:
+    ///   - option: The option to be applied.
+    ///   - value: The value for the option.
     @inlinable
     public func childChannelOption<Option: ChannelOption>(_ option: Option, value: Option.Value) -> Self {
         self._childChannelOptions.append(key: option, value: value)
@@ -216,8 +217,8 @@ public final class ServerBootstrap {
 
     /// Specifies a timeout to apply to a bind attempt. Currently unsupported.
     ///
-    /// - parameters:
-    ///     - timeout: The timeout that will apply to the bind attempt.
+    /// - Parameters:
+    ///   - timeout: The timeout that will apply to the bind attempt.
     public func bindTimeout(_ timeout: TimeAmount) -> Self {
         self
     }
@@ -232,8 +233,8 @@ public final class ServerBootstrap {
     /// > had been disabled. This is a temporary workaround for a Linux kernel
     /// > limitation.
     ///
-    /// - parameters:
-    ///     - value: Whether to enable MPTCP or not.
+    /// - Parameters:
+    ///   - value: Whether to enable MPTCP or not.
     public func enableMPTCP(_ value: Bool) -> Self {
         self.enableMPTCP = value
 
@@ -248,9 +249,9 @@ public final class ServerBootstrap {
 
     /// Bind the `ServerSocketChannel` to `host` and `port`.
     ///
-    /// - parameters:
-    ///     - host: The host to bind on.
-    ///     - port: The port to bind on.
+    /// - Parameters:
+    ///   - host: The host to bind on.
+    ///   - port: The port to bind on.
     public func bind(host: String, port: Int) -> EventLoopFuture<Channel> {
         bind0 {
             try SocketAddress.makeAddressResolvingHost(host, port: port)
@@ -259,16 +260,16 @@ public final class ServerBootstrap {
 
     /// Bind the `ServerSocketChannel` to `address`.
     ///
-    /// - parameters:
-    ///     - address: The `SocketAddress` to bind on.
+    /// - Parameters:
+    ///   - address: The `SocketAddress` to bind on.
     public func bind(to address: SocketAddress) -> EventLoopFuture<Channel> {
         bind0 { address }
     }
 
     /// Bind the `ServerSocketChannel` to a UNIX Domain Socket.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The _Unix domain socket_ path to bind to. `unixDomainSocketPath` must not exist, it will be created by the system.
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The _Unix domain socket_ path to bind to. `unixDomainSocketPath` must not exist, it will be created by the system.
     public func bind(unixDomainSocketPath: String) -> EventLoopFuture<Channel> {
         bind0 {
             try SocketAddress(unixDomainSocketPath: unixDomainSocketPath)
@@ -277,10 +278,10 @@ public final class ServerBootstrap {
 
     /// Bind the `ServerSocketChannel` to a UNIX Domain Socket.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. The`unixDomainSocketPath` must not exist,
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. The`unixDomainSocketPath` must not exist,
     ///     unless `cleanupExistingSocketFile`is set to `true`.
-    ///     - cleanupExistingSocketFile: Whether to cleanup an existing socket file at `unixDomainSocketPath`.
+    ///   - cleanupExistingSocketFile: Whether to cleanup an existing socket file at `unixDomainSocketPath`.
     public func bind(unixDomainSocketPath: String, cleanupExistingSocketFile: Bool) -> EventLoopFuture<Channel> {
         if cleanupExistingSocketFile {
             do {
@@ -295,7 +296,7 @@ public final class ServerBootstrap {
 
     /// Bind the `ServerSocketChannel` to a VSOCK socket.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///   - vsockAddress: The VSOCK socket address to bind on.
     public func bind(to vsockAddress: VsockAddress) -> EventLoopFuture<Channel> {
         func makeChannel(
@@ -325,8 +326,8 @@ public final class ServerBootstrap {
     #if !os(Windows)
     /// Use the existing bound socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the bound stream socket.
+    /// - Parameters:
+    ///   - descriptor: The _Unix file descriptor_ representing the bound stream socket.
     @available(*, deprecated, renamed: "withBoundSocket(_:)")
     public func withBoundSocket(descriptor: CInt) -> EventLoopFuture<Channel> {
         withBoundSocket(descriptor)
@@ -335,8 +336,8 @@ public final class ServerBootstrap {
 
     /// Use the existing bound socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the bound stream socket.
+    /// - Parameters:
+    ///   - socket: The _Unix file descriptor_ representing the bound stream socket.
     public func withBoundSocket(_ socket: NIOBSDSocket.Handle) -> EventLoopFuture<Channel> {
         func makeChannel(
             _ eventLoop: SelectableEventLoop,
@@ -385,7 +386,7 @@ public final class ServerBootstrap {
     private func bind0(
         makeServerChannel: (_ eventLoop: SelectableEventLoop, _ childGroup: EventLoopGroup, _ enableMPTCP: Bool) throws
             -> ServerSocketChannel,
-        _ register: @escaping (EventLoop, ServerSocketChannel) -> EventLoopFuture<Void>
+        _ register: @escaping @Sendable (EventLoop, ServerSocketChannel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
         let eventLoop = self.group.next()
         let childEventLoopGroup = self.childGroup
@@ -409,15 +410,18 @@ public final class ServerBootstrap {
             serverChannelOptions.applyAllChannelOptions(to: serverChannel).flatMap {
                 serverChannelInit(serverChannel)
             }.flatMap {
-                serverChannel.pipeline.addHandler(
-                    AcceptHandler(
-                        childChannelInitializer: childChannelInit,
-                        childChannelOptions: childChannelOptions
-                    ),
-                    name: "AcceptHandler"
-                )
-            }.flatMap {
-                register(eventLoop, serverChannel)
+                do {
+                    try serverChannel.pipeline.syncOperations.addHandler(
+                        AcceptHandler(
+                            childChannelInitializer: childChannelInit,
+                            childChannelOptions: childChannelOptions
+                        ),
+                        name: "AcceptHandler"
+                    )
+                    return register(eventLoop, serverChannel)
+                } catch {
+                    return eventLoop.makeFailedFuture(error)
+                }
             }.map {
                 serverChannel as Channel
             }.flatMapError { error in
@@ -431,12 +435,13 @@ public final class ServerBootstrap {
 
     final class AcceptHandler: ChannelInboundHandler {
         public typealias InboundIn = SocketChannel
+        public typealias InboundOut = SocketChannel
 
-        private let childChannelInit: ((Channel) -> EventLoopFuture<Void>)?
+        private let childChannelInit: (@Sendable (Channel) -> EventLoopFuture<Void>)?
         private let childChannelOptions: ChannelOptions.Storage
 
         init(
-            childChannelInitializer: ((Channel) -> EventLoopFuture<Void>)?,
+            childChannelInitializer: (@Sendable (Channel) -> EventLoopFuture<Void>)?,
             childChannelOptions: ChannelOptions.Storage
         ) {
             self.childChannelInit = childChannelInitializer
@@ -445,7 +450,9 @@ public final class ServerBootstrap {
 
         func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
             if event is ChannelShouldQuiesceEvent {
+                let loopBoundContext = context.loopBound
                 context.channel.close().whenFailure { error in
+                    let context = loopBoundContext.value
                     context.fireErrorCaught(error)
                 }
             }
@@ -457,38 +464,42 @@ public final class ServerBootstrap {
             let ctxEventLoop = context.eventLoop
             let childEventLoop = accepted.eventLoop
             let childChannelInit = self.childChannelInit ?? { (_: Channel) in childEventLoop.makeSucceededFuture(()) }
+            let childChannelOptions = self.childChannelOptions
 
             @inline(__always)
+            @Sendable
             func setupChildChannel() -> EventLoopFuture<Void> {
-                self.childChannelOptions.applyAllChannelOptions(to: accepted).flatMap { () -> EventLoopFuture<Void> in
+                childChannelOptions.applyAllChannelOptions(to: accepted).flatMap { () -> EventLoopFuture<Void> in
                     childEventLoop.assertInEventLoop()
                     return childChannelInit(accepted)
                 }
             }
 
             @inline(__always)
-            func fireThroughPipeline(_ future: EventLoopFuture<Void>) {
+            func fireThroughPipeline(_ future: EventLoopFuture<Void>, context: ChannelHandlerContext) {
+                // Strictly these asserts are redundant with future.assumeIsolated(), but as this code
+                // has guarantees that can be quite hard to follow we keep them here.
                 ctxEventLoop.assertInEventLoop()
-                future.flatMap { (_) -> EventLoopFuture<Void> in
-                    ctxEventLoop.assertInEventLoop()
+                assert(ctxEventLoop === context.eventLoop)
+                future.assumeIsolated().flatMap { (_) -> EventLoopFuture<Void> in
                     guard context.channel.isActive else {
-                        return context.eventLoop.makeFailedFuture(ChannelError._ioOnClosedChannel)
+                        return ctxEventLoop.makeFailedFuture(ChannelError._ioOnClosedChannel)
                     }
-                    context.fireChannelRead(data)
+                    context.fireChannelRead(Self.wrapInboundOut(accepted))
                     return context.eventLoop.makeSucceededFuture(())
                 }.whenFailure { error in
-                    ctxEventLoop.assertInEventLoop()
                     self.closeAndFire(context: context, accepted: accepted, err: error)
                 }
             }
 
             if childEventLoop === ctxEventLoop {
-                fireThroughPipeline(setupChildChannel())
+                fireThroughPipeline(setupChildChannel(), context: context)
             } else {
                 fireThroughPipeline(
                     childEventLoop.flatSubmit {
                         setupChildChannel()
-                    }.hop(to: ctxEventLoop)
+                    }.hop(to: ctxEventLoop),
+                    context: context
                 )
             }
         }
@@ -498,7 +509,9 @@ public final class ServerBootstrap {
             if context.eventLoop.inEventLoop {
                 context.fireErrorCaught(err)
             } else {
+                let loopBoundContext = context.loopBound
                 context.eventLoop.execute {
+                    let context = loopBoundContext.value
                     context.fireErrorCaught(err)
                 }
             }
@@ -515,7 +528,7 @@ extension ServerBootstrap {
     ///   - host: The host to bind on.
     ///   - port: The port to bind on.
     ///   - serverBackPressureStrategy: The back pressure strategy used by the server socket channel.
-    ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
+    ///   - childChannelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -539,7 +552,7 @@ extension ServerBootstrap {
     /// - Parameters:
     ///   - address: The `SocketAddress` to bind on.
     ///   - serverBackPressureStrategy: The back pressure strategy used by the server socket channel.
-    ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
+    ///   - childChannelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -574,7 +587,7 @@ extension ServerBootstrap {
     ///     unless `cleanupExistingSocketFile`is set to `true`.
     ///   - cleanupExistingSocketFile: Whether to cleanup an existing socket file at `unixDomainSocketPath`.
     ///   - serverBackPressureStrategy: The back pressure strategy used by the server socket channel.
-    ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
+    ///   - childChannelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -602,7 +615,7 @@ extension ServerBootstrap {
     /// - Parameters:
     ///   - vsockAddress: The VSOCK socket address to bind on.
     ///   - serverBackPressureStrategy: The back pressure strategy used by the server socket channel.
-    ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
+    ///   - childChannelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -644,8 +657,9 @@ extension ServerBootstrap {
     ///
     /// - Parameters:
     ///   - socket: The _Unix file descriptor_ representing the bound stream socket.
+    ///   - cleanupExistingSocketFile: Unused.
     ///   - serverBackPressureStrategy: The back pressure strategy used by the server socket channel.
-    ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
+    ///   - childChannelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -758,10 +772,9 @@ extension Channel {
         // implementation, `epoll` will send us `EPOLLHUP`. To have it run synchronously, we need to invoke the
         // `flatMap` on the eventloop that the `register` will succeed on.
         self.eventLoop.assertInEventLoop()
-        return self.register().flatMap {
-            self.eventLoop.assertInEventLoop()
-            return body(self)
-        }
+        return self.register().assumeIsolated().flatMap {
+            body(self)
+        }.nonisolated()
     }
 }
 
@@ -799,8 +812,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
         if let protocolHandlers = self.protocolHandlers {
             let channelInitializer = _channelInitializer
             return { channel in
-                channelInitializer(channel).flatMap {
-                    channel.pipeline.addHandlers(protocolHandlers(), position: .first)
+                channelInitializer(channel).hop(to: channel.eventLoop).flatMapThrowing {
+                    try channel.pipeline.syncOperations.addHandlers(protocolHandlers(), position: .first)
                 }
             }
         } else {
@@ -821,8 +834,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     /// `MultiThreadedEventLoopGroup.next`. See `init(validatingGroup:)` for a fallible initializer for
     /// situations where it's impossible to tell ahead of time if the `EventLoopGroup` is compatible or not.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public convenience init(group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             preconditionFailure(
@@ -835,8 +848,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Create a `ClientBootstrap` on the `EventLoopGroup` `group`, validating that `group` is compatible.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public init?(validatingGroup group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             return nil
@@ -866,8 +879,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     ///            might be called multiple times and it's important not to share stateful `ChannelHandler`s in more
     ///            than one `Channel`.
     ///
-    /// - parameters:
-    ///     - handler: A closure that initializes the provided `Channel`.
+    /// - Parameters:
+    ///   - handler: A closure that initializes the provided `Channel`.
     @preconcurrency
     public func channelInitializer(_ handler: @escaping @Sendable (Channel) -> EventLoopFuture<Void>) -> Self {
         self._channelInitializer = handler
@@ -889,9 +902,9 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Specifies a `ChannelOption` to be applied to the `SocketChannel`.
     ///
-    /// - parameters:
-    ///     - option: The option to be applied.
-    ///     - value: The value for the option.
+    /// - Parameters:
+    ///   - option: The option to be applied.
+    ///   - value: The value for the option.
     @inlinable
     public func channelOption<Option: ChannelOption>(_ option: Option, value: Option.Value) -> Self {
         self._channelOptions.append(key: option, value: value)
@@ -900,8 +913,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Specifies a timeout to apply to a connection attempt.
     ///
-    /// - parameters:
-    ///     - timeout: The timeout that will apply to the connection attempt.
+    /// - Parameters:
+    ///   - timeout: The timeout that will apply to the connection attempt.
     public func connectTimeout(_ timeout: TimeAmount) -> Self {
         self.connectTimeout = timeout
         return self
@@ -909,8 +922,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Specifies the `Resolver` to use or `nil` if the default should be used.
     ///
-    /// - parameters:
-    ///     - resolver: The resolver that will be used during the connection attempt.
+    /// - Parameters:
+    ///   - resolver: The resolver that will be used during the connection attempt.
     public func resolver(_ resolver: Resolver?) -> Self {
         self.resolver = resolver
         return self
@@ -926,8 +939,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     /// > had been disabled. This is a temporary workaround for a Linux kernel
     /// > limitation.
     ///
-    /// - parameters:
-    ///     - value: Whether to enable MPTCP or not.
+    /// - Parameters:
+    ///   - value: Whether to enable MPTCP or not.
     public func enableMPTCP(_ value: Bool) -> Self {
         self.enableMPTCP = value
 
@@ -944,10 +957,8 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     ///
     /// Using `bind` is not necessary unless you need the local address to be bound to a specific address.
     ///
-    /// - note: Using `bind` will disable Happy Eyeballs on this `Channel`.
-    ///
-    /// - parameters:
-    ///     - address: The `SocketAddress` to bind on.
+    /// - Parameters:
+    ///   - address: The `SocketAddress` to bind on.
     public func bind(to address: SocketAddress) -> ClientBootstrap {
         self.bindTarget = address
         return self
@@ -966,10 +977,12 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Specify the `host` and `port` to connect to for the TCP `Channel` that will be established.
     ///
-    /// - parameters:
-    ///     - host: The host to connect to.
-    ///     - port: The port to connect to.
-    /// - returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
+    /// - Note: Makes use of Happy Eyeballs.
+    ///
+    /// - Parameters:
+    ///   - host: The host to connect to.
+    ///   - port: The port to connect to.
+    /// - Returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
     public func connect(host: String, port: Int) -> EventLoopFuture<Channel> {
         let loop = self.group.next()
         let resolver =
@@ -993,11 +1006,15 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
         return connector.resolveAndConnect()
     }
 
-    private func connect(freshChannel channel: Channel, address: SocketAddress) -> EventLoopFuture<Void> {
+    private static func connect(
+        freshChannel channel: Channel,
+        address: SocketAddress,
+        connectTimeout: TimeAmount
+    ) -> EventLoopFuture<Void> {
         let connectPromise = channel.eventLoop.makePromise(of: Void.self)
         channel.connect(to: address, promise: connectPromise)
-        let cancelTask = channel.eventLoop.scheduleTask(in: self.connectTimeout) {
-            connectPromise.fail(ChannelError.connectTimeout(self.connectTimeout))
+        let cancelTask = channel.eventLoop.scheduleTask(in: connectTimeout) {
+            connectPromise.fail(ChannelError.connectTimeout(connectTimeout))
             channel.close(promise: nil)
         }
 
@@ -1011,30 +1028,33 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
         injectedChannel: SocketChannel,
         to address: SocketAddress
     ) -> EventLoopFuture<Channel> {
-        self.initializeAndRegisterChannel(injectedChannel) { channel in
-            self.connect(freshChannel: channel, address: address)
+        let connectTimeout = self.connectTimeout
+        return self.initializeAndRegisterChannel(injectedChannel) { channel in
+            Self.connect(freshChannel: channel, address: address, connectTimeout: connectTimeout)
         }
     }
 
     /// Specify the `address` to connect to for the TCP `Channel` that will be established.
     ///
-    /// - parameters:
-    ///     - address: The address to connect to.
-    /// - returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
+    /// - Parameters:
+    ///   - address: The address to connect to.
+    /// - Returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
     public func connect(to address: SocketAddress) -> EventLoopFuture<Channel> {
-        self.initializeAndRegisterNewChannel(
+        let connectTimeout = self.connectTimeout
+
+        return self.initializeAndRegisterNewChannel(
             eventLoop: self.group.next(),
             protocolFamily: address.protocol
         ) { channel in
-            self.connect(freshChannel: channel, address: address)
+            Self.connect(freshChannel: channel, address: address, connectTimeout: connectTimeout)
         }
     }
 
     /// Specify the `unixDomainSocket` path to connect to for the UDS `Channel` that will be established.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The _Unix domain socket_ path to connect to.
-    /// - returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The _Unix domain socket_ path to connect to.
+    /// - Returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
     public func connect(unixDomainSocketPath: String) -> EventLoopFuture<Channel> {
         do {
             let address = try SocketAddress(unixDomainSocketPath: unixDomainSocketPath)
@@ -1046,9 +1066,9 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Specify the VSOCK address to connect to for the `Channel`.
     ///
-    /// - parameters:
-    ///     - address: The VSOCK address to connect to.
-    /// - returns: An `EventLoopFuture<Channel>` for when the `Channel` is connected.
+    /// - Parameters:
+    ///   - address: The VSOCK address to connect to.
+    /// - Returns: An `EventLoopFuture<Channel>` for when the `Channel` is connected.
     public func connect(to address: VsockAddress) -> EventLoopFuture<Channel> {
         let connectTimeout = self.connectTimeout
         return self.initializeAndRegisterNewChannel(
@@ -1073,9 +1093,9 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     #if !os(Windows)
     /// Use the existing connected socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the connected stream socket.
-    /// - returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
+    /// - Parameters:
+    ///   - descriptor: The _Unix file descriptor_ representing the connected stream socket.
+    /// - Returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
     @available(*, deprecated, renamed: "withConnectedSocket(_:)")
     public func withConnectedSocket(descriptor: CInt) -> EventLoopFuture<Channel> {
         self.withConnectedSocket(descriptor)
@@ -1084,12 +1104,14 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     /// Use the existing connected socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the connected stream socket.
-    /// - returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
+    /// - Parameters:
+    ///   - socket: The _Unix file descriptor_ representing the connected stream socket.
+    /// - Returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
     public func withConnectedSocket(_ socket: NIOBSDSocket.Handle) -> EventLoopFuture<Channel> {
         let eventLoop = group.next()
         let channelInitializer = self.channelInitializer
+        let options = self._channelOptions
+
         let channel: SocketChannel
         do {
             channel = try SocketChannel(eventLoop: eventLoop as! SelectableEventLoop, socket: socket)
@@ -1097,9 +1119,10 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
             return eventLoop.makeFailedFuture(error)
         }
 
+        @Sendable
         func setupChannel() -> EventLoopFuture<Channel> {
             eventLoop.assertInEventLoop()
-            return self._channelOptions.applyAllChannelOptions(to: channel).flatMap {
+            return options.applyAllChannelOptions(to: channel).flatMap {
                 channelInitializer(channel)
             }.flatMap {
                 eventLoop.assertInEventLoop()
@@ -1124,7 +1147,7 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
     private func initializeAndRegisterNewChannel(
         eventLoop: EventLoop,
         protocolFamily: NIOBSDSocket.ProtocolFamily,
-        _ body: @escaping (Channel) -> EventLoopFuture<Void>
+        _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
         let channel: SocketChannel
         do {
@@ -1137,17 +1160,19 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
 
     private func initializeAndRegisterChannel(
         _ channel: SocketChannel,
-        _ body: @escaping (Channel) -> EventLoopFuture<Void>
+        _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
         let channelInitializer = self.channelInitializer
         let channelOptions = self._channelOptions
         let eventLoop = channel.eventLoop
+        let bindTarget = self.bindTarget
 
         @inline(__always)
+        @Sendable
         func setupChannel() -> EventLoopFuture<Channel> {
             eventLoop.assertInEventLoop()
             return channelOptions.applyAllChannelOptions(to: channel).flatMap {
-                if let bindTarget = self.bindTarget {
+                if let bindTarget = bindTarget {
                     return channel.bind(to: bindTarget).flatMap {
                         channelInitializer(channel)
                     }
@@ -1217,6 +1242,7 @@ extension ClientBootstrap {
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<Output>
     ) async throws -> Output {
         let eventLoop = self.group.next()
+        let connectTimeout = self.connectTimeout
         return try await self.initializeAndRegisterNewChannel(
             eventLoop: eventLoop,
             protocolFamily: address.protocol,
@@ -1225,7 +1251,7 @@ extension ClientBootstrap {
                 eventLoop.makeSucceededFuture(output)
             },
             { channel in
-                self.connect(freshChannel: channel, address: address)
+                Self.connect(freshChannel: channel, address: address, connectTimeout: connectTimeout)
             }
         ).get().1
     }
@@ -1288,7 +1314,7 @@ extension ClientBootstrap {
     /// Use the existing connected socket file descriptor.
     ///
     /// - Parameters:
-    ///   - descriptor: The _Unix file descriptor_ representing the connected stream socket.
+    ///   - socket: The _Unix file descriptor_ representing the connected stream socket.
     ///   - channelInitializer: A closure to initialize the channel. The return value of this closure is returned from the `connect`
     ///   method.
     /// - Returns: The result of the channel initializer.
@@ -1309,7 +1335,7 @@ extension ClientBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    func connect<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    func connect<ChannelInitializerResult: Sendable, PostRegistrationTransformationResult: Sendable>(
         host: String,
         port: Int,
         eventLoop: EventLoop,
@@ -1346,7 +1372,10 @@ extension ClientBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func withConnectedSocket<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func withConnectedSocket<
+        ChannelInitializerResult: Sendable,
+        PostRegistrationTransformationResult: Sendable
+    >(
         eventLoop: EventLoop,
         socket: NIOBSDSocket.Handle,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
@@ -1369,14 +1398,17 @@ extension ClientBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func initializeAndRegisterNewChannel<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func initializeAndRegisterNewChannel<
+        ChannelInitializerResult: Sendable,
+        PostRegistrationTransformationResult: Sendable
+    >(
         eventLoop: EventLoop,
         protocolFamily: NIOBSDSocket.ProtocolFamily,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
             PostRegistrationTransformationResult
         >,
-        _ body: @escaping (Channel) -> EventLoopFuture<Void>
+        _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<(Channel, PostRegistrationTransformationResult)> {
         let channel: SocketChannel
         do {
@@ -1395,7 +1427,10 @@ extension ClientBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func initializeAndRegisterChannel<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func initializeAndRegisterChannel<
+        ChannelInitializerResult: Sendable,
+        PostRegistrationTransformationResult: Sendable
+    >(
         channel: SocketChannel,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         registration: @escaping @Sendable (SocketChannel) -> EventLoopFuture<Void>,
@@ -1403,9 +1438,12 @@ extension ClientBootstrap {
             PostRegistrationTransformationResult
         >
     ) -> EventLoopFuture<PostRegistrationTransformationResult> {
-        let channelInitializer = { channel in
-            self.channelInitializer(channel)
+        let bootstrapChannelInitializer = self.channelInitializer
+        let channelInitializer = { @Sendable channel in
+            bootstrapChannelInitializer(channel).hop(to: channel.eventLoop)
+                .assumeIsolated()
                 .flatMap { channelInitializer(channel) }
+                .nonisolated()
         }
         let channelOptions = self._channelOptions
         let eventLoop = channel.eventLoop
@@ -1418,6 +1456,7 @@ extension ClientBootstrap {
             return
                 channelOptions
                 .applyAllChannelOptions(to: channel)
+                .assumeIsolated()
                 .flatMap {
                     if let bindTarget = bindTarget {
                         return
@@ -1442,6 +1481,7 @@ extension ClientBootstrap {
                     channel.close0(error: error, mode: .all, promise: nil)
                     return channel.eventLoop.makeFailedFuture(error)
                 }
+                .nonisolated()
         }
 
         if eventLoop.inEventLoop {
@@ -1495,8 +1535,8 @@ public final class DatagramBootstrap {
     /// `MultiThreadedEventLoopGroup.next`. See `init(validatingGroup:)` for a fallible initializer for
     /// situations where it's impossible to tell ahead of time if the `EventLoopGroup` is compatible or not.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public convenience init(group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             preconditionFailure(
@@ -1509,8 +1549,8 @@ public final class DatagramBootstrap {
 
     /// Create a `DatagramBootstrap` on the `EventLoopGroup` `group`, validating that `group` is compatible.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public init?(validatingGroup group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             return nil
@@ -1523,8 +1563,8 @@ public final class DatagramBootstrap {
     /// Initialize the bound `DatagramChannel` with `initializer`. The most common task in initializer is to add
     /// `ChannelHandler`s to the `ChannelPipeline`.
     ///
-    /// - parameters:
-    ///     - handler: A closure that initializes the provided `Channel`.
+    /// - Parameters:
+    ///   - handler: A closure that initializes the provided `Channel`.
     @preconcurrency
     public func channelInitializer(_ handler: @escaping @Sendable (Channel) -> EventLoopFuture<Void>) -> Self {
         self.channelInitializer = handler
@@ -1533,9 +1573,9 @@ public final class DatagramBootstrap {
 
     /// Specifies a `ChannelOption` to be applied to the `DatagramChannel`.
     ///
-    /// - parameters:
-    ///     - option: The option to be applied.
-    ///     - value: The value for the option.
+    /// - Parameters:
+    ///   - option: The option to be applied.
+    ///   - value: The value for the option.
     @inlinable
     public func channelOption<Option: ChannelOption>(_ option: Option, value: Option.Value) -> Self {
         self._channelOptions.append(key: option, value: value)
@@ -1550,8 +1590,8 @@ public final class DatagramBootstrap {
     #if !os(Windows)
     /// Use the existing bound socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the bound datagram socket.
+    /// - Parameters:
+    ///   - descriptor: The _Unix file descriptor_ representing the bound datagram socket.
     @available(*, deprecated, renamed: "withBoundSocket(_:)")
     public func withBoundSocket(descriptor: CInt) -> EventLoopFuture<Channel> {
         self.withBoundSocket(descriptor)
@@ -1560,8 +1600,8 @@ public final class DatagramBootstrap {
 
     /// Use the existing bound socket file descriptor.
     ///
-    /// - parameters:
-    ///     - descriptor: The _Unix file descriptor_ representing the bound datagram socket.
+    /// - Parameters:
+    ///   - socket: The _Unix file descriptor_ representing the bound datagram socket.
     public func withBoundSocket(_ socket: NIOBSDSocket.Handle) -> EventLoopFuture<Channel> {
         func makeChannel(_ eventLoop: SelectableEventLoop) throws -> DatagramChannel {
             try DatagramChannel(eventLoop: eventLoop, socket: socket)
@@ -1575,9 +1615,9 @@ public final class DatagramBootstrap {
 
     /// Bind the `DatagramChannel` to `host` and `port`.
     ///
-    /// - parameters:
-    ///     - host: The host to bind on.
-    ///     - port: The port to bind on.
+    /// - Parameters:
+    ///   - host: The host to bind on.
+    ///   - port: The port to bind on.
     public func bind(host: String, port: Int) -> EventLoopFuture<Channel> {
         bind0 {
             try SocketAddress.makeAddressResolvingHost(host, port: port)
@@ -1586,16 +1626,16 @@ public final class DatagramBootstrap {
 
     /// Bind the `DatagramChannel` to `address`.
     ///
-    /// - parameters:
-    ///     - address: The `SocketAddress` to bind on.
+    /// - Parameters:
+    ///   - address: The `SocketAddress` to bind on.
     public func bind(to address: SocketAddress) -> EventLoopFuture<Channel> {
         bind0 { address }
     }
 
     /// Bind the `DatagramChannel` to a UNIX Domain Socket.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. `path` must not exist, it will be created by the system.
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. `path` must not exist, it will be created by the system.
     public func bind(unixDomainSocketPath: String) -> EventLoopFuture<Channel> {
         bind0 {
             try SocketAddress(unixDomainSocketPath: unixDomainSocketPath)
@@ -1604,10 +1644,10 @@ public final class DatagramBootstrap {
 
     /// Bind the `DatagramChannel` to a UNIX Domain Socket.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. The`unixDomainSocketPath` must not exist,
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The path of the UNIX Domain Socket to bind on. The`unixDomainSocketPath` must not exist,
     ///     unless `cleanupExistingSocketFile`is set to `true`.
-    ///     - cleanupExistingSocketFile: Whether to cleanup an existing socket file at `unixDomainSocketPath`.
+    ///   - cleanupExistingSocketFile: Whether to cleanup an existing socket file at `unixDomainSocketPath`.
     public func bind(unixDomainSocketPath: String, cleanupExistingSocketFile: Bool) -> EventLoopFuture<Channel> {
         if cleanupExistingSocketFile {
             do {
@@ -1662,9 +1702,9 @@ public final class DatagramBootstrap {
 
     /// Connect the `DatagramChannel` to `host` and `port`.
     ///
-    /// - parameters:
-    ///     - host: The host to connect to.
-    ///     - port: The port to connect to.
+    /// - Parameters:
+    ///   - host: The host to connect to.
+    ///   - port: The port to connect to.
     public func connect(host: String, port: Int) -> EventLoopFuture<Channel> {
         connect0 {
             try SocketAddress.makeAddressResolvingHost(host, port: port)
@@ -1673,16 +1713,16 @@ public final class DatagramBootstrap {
 
     /// Connect the `DatagramChannel` to `address`.
     ///
-    /// - parameters:
-    ///     - address: The `SocketAddress` to connect to.
+    /// - Parameters:
+    ///   - address: The `SocketAddress` to connect to.
     public func connect(to address: SocketAddress) -> EventLoopFuture<Channel> {
         connect0 { address }
     }
 
     /// Connect the `DatagramChannel` to a UNIX Domain Socket.
     ///
-    /// - parameters:
-    ///     - unixDomainSocketPath: The path of the UNIX Domain Socket to connect to. `path` must not exist, it will be created by the system.
+    /// - Parameters:
+    ///   - unixDomainSocketPath: The path of the UNIX Domain Socket to connect to. `path` must not exist, it will be created by the system.
     public func connect(unixDomainSocketPath: String) -> EventLoopFuture<Channel> {
         connect0 {
             try SocketAddress(unixDomainSocketPath: unixDomainSocketPath)
@@ -1713,7 +1753,7 @@ public final class DatagramBootstrap {
     
     private func withNewChannel(
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
-        _ bringup: @escaping (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
+        _ bringup: @escaping @Sendable (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
         let eventLoop = group.next()
         return withNewChannel(eventLoop: eventLoop, makeChannel: makeChannel, bringup)
@@ -1721,9 +1761,9 @@ public final class DatagramBootstrap {
 
     private func withNewChannel(eventLoop: EventLoop,
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
-        _ bringup: @escaping (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
+        _ bringup: @escaping @Sendable (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
-        let channelInitializer = self.channelInitializer ?? { _ in eventLoop.makeSucceededFuture(()) }
+        let channelInitializer = self.channelInitializer ?? { @Sendable _ in eventLoop.makeSucceededFuture(()) }
         let channelOptions = self._channelOptions
 
         let channel: DatagramChannel
@@ -1733,6 +1773,7 @@ public final class DatagramBootstrap {
             return eventLoop.makeFailedFuture(error)
         }
 
+        @Sendable
         func setupChannel() -> EventLoopFuture<Channel> {
             eventLoop.assertInEventLoop()
             return channelOptions.applyAllChannelOptions(to: channel).flatMap {
@@ -1939,7 +1980,7 @@ extension DatagramBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func connect0<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func connect0<ChannelInitializerResult: Sendable, PostRegistrationTransformationResult: Sendable>(
         makeSocketAddress: () throws -> SocketAddress,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
@@ -1970,7 +2011,7 @@ extension DatagramBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func bind0<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func bind0<ChannelInitializerResult: Sendable, PostRegistrationTransformationResult: Sendable>(
         makeSocketAddress: () throws -> SocketAddress,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
@@ -2001,7 +2042,10 @@ extension DatagramBootstrap {
     }
 
     @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
-    private func makeConfiguredChannel<ChannelInitializerResult, PostRegistrationTransformationResult>(
+    private func makeConfiguredChannel<
+        ChannelInitializerResult: Sendable,
+        PostRegistrationTransformationResult: Sendable
+    >(
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         registration: @escaping @Sendable (Channel) -> EventLoopFuture<Void>,
@@ -2010,9 +2054,14 @@ extension DatagramBootstrap {
         >
     ) -> EventLoopFuture<PostRegistrationTransformationResult> {
         let eventLoop = self.group.next()
-        let channelInitializer = { (channel: Channel) -> EventLoopFuture<ChannelInitializerResult> in
-            let initializer = self.channelInitializer ?? { _ in eventLoop.makeSucceededFuture(()) }
-            return initializer(channel).flatMap { channelInitializer(channel) }
+        let bootstrapChannelInitializer =
+            self.channelInitializer ?? { @Sendable _ in eventLoop.makeSucceededFuture(()) }
+        let channelInitializer = { @Sendable (channel: Channel) -> EventLoopFuture<ChannelInitializerResult> in
+            bootstrapChannelInitializer(channel)
+                .hop(to: channel.eventLoop)
+                .assumeIsolated()
+                .flatMap { channelInitializer(channel) }
+                .nonisolated()
         }
         let channelOptions = self._channelOptions
 
@@ -2023,6 +2072,7 @@ extension DatagramBootstrap {
             return eventLoop.makeFailedFuture(error)
         }
 
+        @Sendable
         func setupChannel() -> EventLoopFuture<PostRegistrationTransformationResult> {
             eventLoop.assertInEventLoop()
             return channelOptions.applyAllChannelOptions(to: channel).flatMap {
@@ -2079,8 +2129,8 @@ public final class NIOPipeBootstrap {
     /// `MultiThreadedEventLoopGroup.next`. See `init(validatingGroup:)` for a fallible initializer for
     /// situations where it's impossible to tell ahead of time if the `EventLoopGroup`s are compatible or not.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public convenience init(group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             preconditionFailure(
@@ -2093,8 +2143,8 @@ public final class NIOPipeBootstrap {
 
     /// Create a `NIOPipeBootstrap` on the `EventLoopGroup` `group`, validating that `group` is compatible.
     ///
-    /// - parameters:
-    ///     - group: The `EventLoopGroup` to use.
+    /// - Parameters:
+    ///   - group: The `EventLoopGroup` to use.
     public init?(validatingGroup group: EventLoopGroup) {
         guard NIOOnSocketsBootstraps.isCompatible(group: group) else {
             return nil
@@ -2124,8 +2174,8 @@ public final class NIOPipeBootstrap {
     /// The connected `Channel` will operate on `ByteBuffer` as inbound and outbound messages. Please note that
     /// `IOData.fileRegion` is _not_ supported for `PipeChannel`s because `sendfile` only works on sockets.
     ///
-    /// - parameters:
-    ///     - handler: A closure that initializes the provided `Channel`.
+    /// - Parameters:
+    ///   - handler: A closure that initializes the provided `Channel`.
     @preconcurrency
     public func channelInitializer(_ handler: @escaping @Sendable (Channel) -> EventLoopFuture<Void>) -> Self {
         self.channelInitializer = handler
@@ -2134,9 +2184,9 @@ public final class NIOPipeBootstrap {
 
     /// Specifies a `ChannelOption` to be applied to the `PipeChannel`.
     ///
-    /// - parameters:
-    ///     - option: The option to be applied.
-    ///     - value: The value for the option.
+    /// - Parameters:
+    ///   - option: The option to be applied.
+    ///   - value: The value for the option.
     @inlinable
     public func channelOption<Option: ChannelOption>(_ option: Option, value: Option.Value) -> Self {
         self._channelOptions.append(key: option, value: value)
@@ -2431,8 +2481,10 @@ extension NIOPipeBootstrap {
         let channelOptions = self._channelOptions
 
         let channel: PipeChannel
-        let inputFileHandle: NIOFileHandle?
-        let outputFileHandle: NIOFileHandle?
+        let pipeChannelInput: SelectablePipeHandle?
+        let pipeChannelOutput: SelectablePipeHandle?
+        let hasNoInputPipe: Bool
+        let hasNoOutputPipe: Bool
         do {
             if let input = input {
                 try self.validateFileDescriptorIsNotAFile(input)
@@ -2441,18 +2493,20 @@ extension NIOPipeBootstrap {
                 try self.validateFileDescriptorIsNotAFile(output)
             }
 
-            inputFileHandle = input.flatMap { NIOFileHandle(descriptor: $0) }
-            outputFileHandle = output.flatMap { NIOFileHandle(descriptor: $0) }
+            pipeChannelInput = input.flatMap { SelectablePipeHandle(takingOwnershipOfDescriptor: $0) }
+            pipeChannelOutput = output.flatMap { SelectablePipeHandle(takingOwnershipOfDescriptor: $0) }
+            hasNoInputPipe = pipeChannelInput == nil
+            hasNoOutputPipe = pipeChannelOutput == nil
             do {
                 channel = try self.hooks.makePipeChannel(
                     eventLoop: eventLoop as! SelectableEventLoop,
-                    inputPipe: inputFileHandle,
-                    outputPipe: outputFileHandle
+                    input: pipeChannelInput,
+                    output: pipeChannelOutput
                 )
             } catch {
                 // Release file handles back to the caller in case of failure.
-                _ = try? inputFileHandle?.takeDescriptorOwnership()
-                _ = try? outputFileHandle?.takeDescriptorOwnership()
+                _ = try? pipeChannelInput?.takeDescriptorOwnership()
+                _ = try? pipeChannelOutput?.takeDescriptorOwnership()
                 throw error
             }
         } catch {
@@ -2471,10 +2525,10 @@ extension NIOPipeBootstrap {
                 channel.registerAlreadyConfigured0(promise: promise)
                 return promise.futureResult.map { result }
             }.flatMap { result -> EventLoopFuture<ChannelInitializerResult> in
-                if inputFileHandle == nil {
+                if hasNoInputPipe {
                     return channel.close(mode: .input).map { result }
                 }
-                if outputFileHandle == nil {
+                if hasNoOutputPipe {
                     return channel.close(mode: .output).map { result }
                 }
                 return channel.selectableEventLoop.makeSucceededFuture(result)
@@ -2500,17 +2554,17 @@ extension NIOPipeBootstrap: Sendable {}
 protocol NIOPipeBootstrapHooks {
     func makePipeChannel(
         eventLoop: SelectableEventLoop,
-        inputPipe: NIOFileHandle?,
-        outputPipe: NIOFileHandle?
+        input: SelectablePipeHandle?,
+        output: SelectablePipeHandle?
     ) throws -> PipeChannel
 }
 
 private struct DefaultNIOPipeBootstrapHooks: NIOPipeBootstrapHooks {
     func makePipeChannel(
         eventLoop: SelectableEventLoop,
-        inputPipe: NIOFileHandle?,
-        outputPipe: NIOFileHandle?
+        input: SelectablePipeHandle?,
+        output: SelectablePipeHandle?
     ) throws -> PipeChannel {
-        try PipeChannel(eventLoop: eventLoop, inputPipe: inputPipe, outputPipe: outputPipe)
+        try PipeChannel(eventLoop: eventLoop, input: input, output: output)
     }
 }

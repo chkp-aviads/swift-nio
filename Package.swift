@@ -23,7 +23,7 @@ let swiftAtomics: PackageDescription.Target.Dependency = .product(name: "Atomics
 let swiftCollections: PackageDescription.Target.Dependency = .product(name: "DequeModule", package: "swift-collections")
 let swiftSystem: PackageDescription.Target.Dependency = .product(name: "SystemPackage", package: "swift-system")
 
-// These platforms require a depdency on `NIOPosix` from `NIOHTTP1` to maintain backward
+// These platforms require a dependency on `NIOPosix` from `NIOHTTP1` to maintain backward
 // compatibility with previous NIO versions.
 let historicalNIOPosixDependencyRequired: [Platform] = [.macOS, .iOS, .tvOS, .watchOS, .linux, .android]
 
@@ -86,7 +86,8 @@ let package = Package(
                 "_NIODataStructures",
                 swiftCollections,
                 swiftAtomics,
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .target(
             name: "_NIODataStructures",
@@ -104,7 +105,8 @@ let package = Package(
                 "_NIODataStructures",
                 swiftAtomics,
                 swiftCollections,
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .target(
             name: "NIOPosix",
@@ -414,11 +416,13 @@ let package = Package(
         .testTarget(
             name: "NIOCoreTests",
             dependencies: [
+                "NIOConcurrencyHelpers",
                 "NIOCore",
                 "NIOEmbedded",
                 "NIOFoundationCompat",
                 swiftAtomics,
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "NIOEmbeddedTests",
@@ -426,7 +430,8 @@ let package = Package(
                 "NIOConcurrencyHelpers",
                 "NIOCore",
                 "NIOEmbedded",
-            ]
+            ],
+            swiftSettings: strictConcurrencySettings
         ),
         .testTarget(
             name: "NIOPosixTests",
@@ -438,6 +443,7 @@ let package = Package(
                 "NIOConcurrencyHelpers",
                 "NIOEmbedded",
                 "CNIOLinux",
+                "CNIODarwin",
                 "NIOTLS",
             ]
         ),
@@ -553,7 +559,7 @@ let package = Package(
 if Context.environment["SWIFTCI_USE_LOCAL_DEPS"] == nil {
     package.dependencies += [
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.1.0"),
-        .package(url: "https://github.com/apple/swift-collections.git", from: "1.0.2"),
+        .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.4.0"),
     ]
 } else {
@@ -563,3 +569,14 @@ if Context.environment["SWIFTCI_USE_LOCAL_DEPS"] == nil {
         .package(path: "../swift-system"),
     ]
 }
+
+// ---    STANDARD CROSS-REPO SETTINGS DO NOT EDIT   --- //
+for target in package.targets {
+    if target.type != .plugin {
+        var settings = target.swiftSettings ?? []
+        // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0444-member-import-visibility.md
+        settings.append(.enableUpcomingFeature("MemberImportVisibility"))
+        target.swiftSettings = settings
+    }
+}
+// --- END: STANDARD CROSS-REPO SETTINGS DO NOT EDIT --- //

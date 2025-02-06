@@ -15,11 +15,13 @@
 import NIOCore
 
 extension UInt8 {
-    fileprivate func isAnyBitSetInMask(_ mask: UInt8) -> Bool {
+    @usableFromInline
+    internal func isAnyBitSetInMask(_ mask: UInt8) -> Bool {
         self & mask != 0
     }
 
-    fileprivate mutating func changingBitsInMask(_ mask: UInt8, to: Bool) {
+    @usableFromInline
+    internal mutating func changingBitsInMask(_ mask: UInt8, to: Bool) {
         if to {
             self |= mask
         } else {
@@ -53,8 +55,8 @@ public struct WebSocketMaskingKey: Sendable {
     /// Creates a websocket masking key from the network-encoded
     /// representation.
     ///
-    /// - parameters:
-    ///     - integer: The encoded network representation of the
+    /// - Parameters:
+    ///   - integer: The encoded network representation of the
     ///         masking key.
     @usableFromInline
     internal init(networkRepresentation integer: UInt32) {
@@ -159,11 +161,13 @@ public struct WebSocketFrame {
     /// Rather than unpack all the fields from the first byte, and thus take up loads
     /// of storage in the structure, we keep them in their packed form in this byte and
     /// use computed properties to unpack them.
+    @usableFromInline
     internal var firstByte: UInt8 = 0
 
     /// The value of the `fin` bit. If set, this is the last frame in a fragmented frame. If not
     /// set, this frame is one of the intermediate frames in a fragmented frame. Must be set if
     /// a frame is not fragmented at all.
+    @inlinable
     public var fin: Bool {
         get {
             self.firstByte.isAnyBitSetInMask(0x80)
@@ -174,6 +178,7 @@ public struct WebSocketFrame {
     }
 
     /// The value of the first reserved bit. Must be `false` unless using an extension that defines its use.
+    @inlinable
     public var rsv1: Bool {
         get {
             self.firstByte.isAnyBitSetInMask(0x40)
@@ -184,6 +189,7 @@ public struct WebSocketFrame {
     }
 
     /// The value of the second reserved bit. Must be `false` unless using an extension that defines its use.
+    @inlinable
     public var rsv2: Bool {
         get {
             self.firstByte.isAnyBitSetInMask(0x20)
@@ -194,6 +200,7 @@ public struct WebSocketFrame {
     }
 
     /// The value of the third reserved bit. Must be `false` unless using an extension that defines its use.
+    @inlinable
     public var rsv3: Bool {
         get {
             self.firstByte.isAnyBitSetInMask(0x10)
@@ -204,6 +211,7 @@ public struct WebSocketFrame {
     }
 
     /// The opcode for this frame.
+    @inlinable
     public var opcode: WebSocketOpcode {
         get {
             // this is a public initialiser which only fails if the opcode is invalid. But all opcodes in 0...0xF
@@ -216,6 +224,7 @@ public struct WebSocketFrame {
     }
 
     /// The total length of the data in the frame.
+    @inlinable
     public var length: Int {
         data.readableBytes + (extensionData?.readableBytes ?? 0)
     }
@@ -290,23 +299,23 @@ public struct WebSocketFrame {
 
     /// Creates an empty `WebSocketFrame`.
     ///
-    /// - parameters:
-    ///     - allocator: The `ByteBufferAllocator` to use when editing the empty buffers.
+    /// - Parameters:
+    ///   - allocator: The `ByteBufferAllocator` to use when editing the empty buffers.
     public init(allocator: ByteBufferAllocator) {
         self._storage = .init(data: allocator.buffer(capacity: 0), extensionData: nil)
     }
 
     /// Create a `WebSocketFrame` with the given properties.
     ///
-    /// - parameters:
-    ///     - fin: The value of the `fin` bit. Defaults to `false`.
-    ///     - rsv1: The value of the first reserved bit. Defaults to `false`.
-    ///     - rsv2: The value of the second reserved bit. Defaults to `false`.
-    ///     - rsv3: The value of the third reserved bit. Defaults to `false`.
-    ///     - opcode: The opcode for the frame. Defaults to `.continuation`.
-    ///     - maskKey: The masking key for the frame, if any. Defaults to `nil`.
-    ///     - data: The application data for the frame.
-    ///     - extensionData: The extension data for the frame.
+    /// - Parameters:
+    ///   - fin: The value of the `fin` bit. Defaults to `false`.
+    ///   - rsv1: The value of the first reserved bit. Defaults to `false`.
+    ///   - rsv2: The value of the second reserved bit. Defaults to `false`.
+    ///   - rsv3: The value of the third reserved bit. Defaults to `false`.
+    ///   - opcode: The opcode for the frame. Defaults to `.continuation`.
+    ///   - maskKey: The masking key for the frame, if any. Defaults to `nil`.
+    ///   - data: The application data for the frame.
+    ///   - extensionData: The extension data for the frame.
     public init(
         fin: Bool = false,
         rsv1: Bool = false,
@@ -383,7 +392,7 @@ extension WebSocketFrame: CustomStringConvertible {
     ///
     /// The format of the description is not API.
     ///
-    /// - returns: A description of this `WebSocketFrame`.
+    /// - Returns: A description of this `WebSocketFrame`.
     public var description: String {
         """
         maskKey: \(String(describing: self.maskKey)), \
@@ -404,5 +413,37 @@ extension WebSocketFrame: CustomStringConvertible {
 extension WebSocketFrame: CustomDebugStringConvertible {
     public var debugDescription: String {
         "(\(self.description))"
+    }
+}
+
+extension WebSocketFrame {
+    /// WebSocketFrame reserved bits option set
+    public struct ReservedBits: OptionSet, Sendable {
+        public var rawValue: UInt8
+
+        @inlinable
+        public init(rawValue: UInt8) {
+            self.rawValue = rawValue
+        }
+
+        @inlinable
+        public static var rsv1: Self { .init(rawValue: 0x40) }
+        @inlinable
+        public static var rsv2: Self { .init(rawValue: 0x20) }
+        @inlinable
+        public static var rsv3: Self { .init(rawValue: 0x10) }
+        @inlinable
+        public static var all: Self { .init(rawValue: 0x70) }
+    }
+
+    /// The value of all the reserved bits. Must be `empty` unless using an extension that defines their use.
+    @inlinable
+    public var reservedBits: ReservedBits {
+        get {
+            .init(rawValue: self.firstByte & 0x70)
+        }
+        set {
+            self.firstByte = (self.firstByte & 0x8F) + newValue.rawValue
+        }
     }
 }

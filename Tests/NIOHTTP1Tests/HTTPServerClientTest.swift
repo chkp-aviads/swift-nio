@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -98,7 +98,7 @@ class HTTPServerClientTest: XCTestCase {
 
                 let content = buffer.getData(at: 0, length: buffer.readableBytes)!
                 XCTAssertNoThrow(try content.write(to: URL(fileURLWithPath: filePath)))
-                let fh = try! NIOFileHandle(path: filePath)
+                let fh = try! NIOFileHandle(_deprecatedPath: filePath)
                 let region = FileRegion(
                     fileHandle: fh,
                     readerIndex: 0,
@@ -109,6 +109,7 @@ class HTTPServerClientTest: XCTestCase {
         }
 
         public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+            let loopBoundContext = context.loopBound
             switch Self.unwrapInboundIn(data) {
             case .head(let req):
                 switch req.uri {
@@ -129,6 +130,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -154,6 +156,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -184,6 +187,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(trailers))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -208,6 +212,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -221,6 +226,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -233,6 +239,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -251,6 +258,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -271,6 +279,7 @@ class HTTPServerClientTest: XCTestCase {
                     context.write(Self.wrapOutboundOut(.end(nil))).recover { error in
                         XCTFail("unexpected error \(error)")
                     }.whenComplete { (_: Result<Void, Error>) in
+                        let context = loopBoundContext.value
                         self.sentEnd = true
                         self.maybeClose(context: context)
                     }
@@ -403,8 +412,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: httpVersion, method: .GET, uri: uri)
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
 
         accumulation.syncWaitForCompletion()
     }
@@ -464,8 +480,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/count-to-ten")
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
         accumulation.syncWaitForCompletion()
     }
 
@@ -523,8 +546,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/zero-length-body-part")
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
         accumulation.syncWaitForCompletion()
     }
 
@@ -581,8 +611,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/trailers")
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
 
         accumulation.syncWaitForCompletion()
     }
@@ -640,7 +677,7 @@ class HTTPServerClientTest: XCTestCase {
         var buffer = clientChannel.allocator.buffer(capacity: numBytes)
         buffer.writeStaticString("GET /massive-response HTTP/1.1\r\nHost: nio.net\r\n\r\n")
 
-        try clientChannel.writeAndFlush(NIOAny(buffer)).wait()
+        try clientChannel.writeAndFlush(buffer).wait()
         accumulation.syncWaitForCompletion()
     }
 
@@ -687,8 +724,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: .http1_1, method: .HEAD, uri: "/head")
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
 
         accumulation.syncWaitForCompletion()
     }
@@ -734,8 +778,15 @@ class HTTPServerClientTest: XCTestCase {
 
         var head = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/204")
         head.headers.add(name: "Host", value: "apple.com")
-        clientChannel.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
-        try clientChannel.writeAndFlush(NIOAny(HTTPClientRequestPart.end(nil))).wait()
+        try clientChannel.eventLoop.flatSubmit {
+            let promise = clientChannel.eventLoop.makePromise(of: Void.self)
+            clientChannel.pipeline.syncOperations.write(NIOAny(HTTPClientRequestPart.head(head)), promise: nil)
+            clientChannel.pipeline.syncOperations.writeAndFlush(
+                NIOAny(HTTPClientRequestPart.end(nil)),
+                promise: promise
+            )
+            return promise.futureResult
+        }.wait()
 
         accumulation.syncWaitForCompletion()
     }

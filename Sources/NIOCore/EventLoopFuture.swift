@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2020 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -26,9 +26,9 @@ import Dispatch
 /// In particular, note that _run() here continues to obtain and execute lists of callbacks until it completes.
 /// This eliminates recursion when processing `flatMap()` chains.
 @usableFromInline
-internal struct CallbackList: Sendable {
+internal struct CallbackList {
     @usableFromInline
-    internal typealias Element = @Sendable () -> CallbackList
+    internal typealias Element = () -> CallbackList
     @usableFromInline
     internal var firstCallback: Optional<Element>
     @usableFromInline
@@ -115,6 +115,9 @@ internal struct CallbackList: Sendable {
     }
 }
 
+@available(*, unavailable)
+extension CallbackList: Sendable {}
+
 /// Internal error for operations that return results that were not replaced
 @usableFromInline
 internal struct OperationPlaceholderError: Error {
@@ -153,7 +156,7 @@ internal struct OperationPlaceholderError: Error {
 ///     some other API, create an already-resolved object with `eventLoop.makeSucceededFuture(result)`
 ///     or `eventLoop.newFailedFuture(error:)`.
 ///
-/// - note: `EventLoopPromise` has reference semantics.
+/// - Note: `EventLoopPromise` has reference semantics.
 public struct EventLoopPromise<Value> {
     /// The `EventLoopFuture` which is used by the `EventLoopPromise`. You can use it to add callbacks which are notified once the
     /// `EventLoopPromise` is completed.
@@ -163,17 +166,22 @@ public struct EventLoopPromise<Value> {
     internal static func makeUnleakablePromise(eventLoop: EventLoop, line: UInt = #line) -> EventLoopPromise<Value> {
         EventLoopPromise<Value>(
             eventLoop: eventLoop,
-            file: "BUG in SwiftNIO (please report), unleakable promise leaked.",
+            file: """
+                EventLoopGroup shut down with unfulfilled promises remaining. \
+                This suggests that the EventLoopGroup was shut down with unfinished work outstanding which is \
+                illegal. Either switch to using the singleton EventLoopGroups or fix the issue by only shutting down \
+                the EventLoopGroups when all the work associated with them has finished.
+                """,
             line: line
         )
     }
 
     /// General initializer
     ///
-    /// - parameters:
-    ///     - eventLoop: The event loop this promise is tied to.
-    ///     - file: The file this promise was allocated in, for debugging purposes.
-    ///     - line: The line this promise was allocated on, for debugging purposes.
+    /// - Parameters:
+    ///   - eventLoop: The event loop this promise is tied to.
+    ///   - file: The file this promise was allocated in, for debugging purposes.
+    ///   - line: The line this promise was allocated on, for debugging purposes.
     @inlinable
     internal init(eventLoop: EventLoop, file: StaticString, line: UInt) {
         self.futureResult = EventLoopFuture<Value>(_eventLoop: eventLoop, file: file, line: line)
@@ -181,8 +189,8 @@ public struct EventLoopPromise<Value> {
 
     /// Deliver a successful result to the associated `EventLoopFuture<Value>` object.
     ///
-    /// - parameters:
-    ///     - value: The successful result of the operation.
+    /// - Parameters:
+    ///   - value: The successful result of the operation.
     @preconcurrency
     @inlinable
     public func succeed(_ value: Value) where Value: Sendable {
@@ -191,7 +199,7 @@ public struct EventLoopPromise<Value> {
 
     /// Deliver an error to the associated `EventLoopFuture<Value>` object.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///      - error: The error from the operation.
     @inlinable
     public func fail(_ error: Error) {
@@ -212,8 +220,8 @@ public struct EventLoopPromise<Value> {
     /// - Note: The `Value` must be `Sendable` since the isolation domains of the passed future and this promise might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - future: The future whose value will be used to succeed or fail this promise.
+    /// - Parameters:
+    ///   - future: The future whose value will be used to succeed or fail this promise.
     /// - seealso: `EventLoopFuture.cascade(to:)`
     @preconcurrency
     @inlinable
@@ -233,8 +241,8 @@ public struct EventLoopPromise<Value> {
     /// }
     /// ```
     ///
-    /// - parameters:
-    ///     - result: The result which will be used to succeed or fail this promise.
+    /// - Parameters:
+    ///   - result: The result which will be used to succeed or fail this promise.
     @preconcurrency
     @inlinable
     public func completeWith(_ result: Result<Value, Error>) where Value: Sendable {
@@ -247,8 +255,8 @@ public struct EventLoopPromise<Value> {
     /// other `Promise` implementations: specifically, all callbacks fire on the `EventLoop`
     /// that was used to create the promise.
     ///
-    /// - parameters:
-    ///     - value: The value to fire the future with.
+    /// - Parameters:
+    ///   - value: The value to fire the future with.
     @inlinable
     internal func _resolve(value: Result<Value, Error>) where Value: Sendable {
         if self.futureResult.eventLoop.inEventLoop {
@@ -262,9 +270,9 @@ public struct EventLoopPromise<Value> {
 
     /// Set the future result and get the associated callbacks.
     ///
-    /// - parameters:
-    ///     - value: The result of the promise.
-    /// - returns: The callback list to run.
+    /// - Parameters:
+    ///   - value: The result of the promise.
+    /// - Returns: The callback list to run.
     @inlinable
     internal func _setValue(value: Result<Value, Error>) -> CallbackList {
         self.futureResult._setValue(value: value)
@@ -486,10 +494,10 @@ extension EventLoopFuture {
     /// - Note: The `NewValue` must be `Sendable` since the isolation domains of this future and the future returned from the callback
     /// might differ i.e. they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
     ///         a new `EventLoopFuture`.
-    /// - returns: A future that will receive the eventual value.
+    /// - Returns: A future that will receive the eventual value.
     @inlinable
     @preconcurrency
     public func flatMap<NewValue: Sendable>(
@@ -534,10 +542,10 @@ extension EventLoopFuture {
     /// - Note: The `NewValue` must be `Sendable` since the isolation domains of this future and the future returned from the callback
     /// might differ i.e. they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
     ///         a new value lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the eventual value.
+    /// - Returns: A future that will receive the eventual value.
     @inlinable
     @preconcurrency
     public func flatMapThrowing<NewValue>(
@@ -578,10 +586,10 @@ extension EventLoopFuture {
     ///
     /// If your callback function throws, the returned `EventLoopFuture` will error.
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
     ///         a new value lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the eventual value or a rethrown error.
+    /// - Returns: A future that will receive the eventual value or a rethrown error.
     @inlinable
     @preconcurrency
     public func flatMapErrorThrowing(
@@ -632,10 +640,10 @@ extension EventLoopFuture {
     /// }
     /// ```
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the value of this `EventLoopFuture` and return
     ///         a new value lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the eventual value.
+    /// - Returns: A future that will receive the eventual value.
     @inlinable
     @preconcurrency
     public func map<NewValue>(
@@ -671,10 +679,10 @@ extension EventLoopFuture {
     /// - Note: The `Value` must be `Sendable` since the isolation domains of this future and the future returned from the callback
     /// might differ i.e. they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
     ///         a new value lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the recovered value.
+    /// - Returns: A future that will receive the recovered value.
     @inlinable
     @preconcurrency
     public func flatMapError(
@@ -709,10 +717,10 @@ extension EventLoopFuture {
     /// performs a simple data transformation that can potentially error.
     ///
     ///
-    /// - parameters:
-    ///     - body: Function that will receive the value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - body: Function that will receive the value of this `EventLoopFuture` and return
     ///         a new value or error lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the eventual value.
+    /// - Returns: A future that will receive the eventual value.
     @inlinable
     @preconcurrency
     public func flatMapResult<NewValue, SomeError: Error>(
@@ -753,10 +761,10 @@ extension EventLoopFuture {
     /// event loop. `recover` is intended for use when you have the ability to synchronously
     /// recover from errors.
     ///
-    /// - parameters:
-    ///     - callback: Function that will receive the error value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - callback: Function that will receive the error value of this `EventLoopFuture` and return
     ///         a new value lifted into a new `EventLoopFuture`.
-    /// - returns: A future that will receive the recovered value.
+    /// - Returns: A future that will receive the recovered value.
     @inlinable
     @preconcurrency
     public func recover(_ callback: @escaping @Sendable (Error) -> Value) -> EventLoopFuture<Value> {
@@ -774,7 +782,7 @@ extension EventLoopFuture {
 
     /// Add a callback.  If there's already a value, invoke it and return the resulting list of new callback functions.
     @inlinable
-    internal func _addCallback(_ callback: @escaping @Sendable () -> CallbackList) -> CallbackList {
+    internal func _addCallback(_ callback: @escaping () -> CallbackList) -> CallbackList {
         self.eventLoop.assertInEventLoop()
         if self._value == nil {
             self._callbacks.append(callback)
@@ -795,12 +803,19 @@ extension EventLoopFuture {
     @inlinable
     internal func _internalWhenComplete(_ callback: @escaping @Sendable () -> CallbackList) {
         if self.eventLoop.inEventLoop {
-            self._addCallback(callback)._run()
+            self._whenCompleteIsolated(callback)
         } else {
             self.eventLoop.execute {
-                self._addCallback(callback)._run()
+                self._whenCompleteIsolated(callback)
             }
         }
+    }
+
+    /// Add a callback.  If there's already a value, run as much of the chain as we can.
+    @inlinable
+    internal func _whenCompleteIsolated(_ callback: @escaping () -> CallbackList) {
+        self.eventLoop.assertInEventLoop()
+        self._addCallback(callback)._run()
     }
 
     /// Adds an observer callback to this `EventLoopFuture` that is called when the
@@ -811,8 +826,8 @@ extension EventLoopFuture {
     /// If you find yourself passing the results from this `EventLoopFuture` to a new `EventLoopPromise`
     /// in the body of this function, consider using `cascade` instead.
     ///
-    /// - parameters:
-    ///     - callback: The callback that is called with the successful result of the `EventLoopFuture`.
+    /// - Parameters:
+    ///   - callback: The callback that is called with the successful result of the `EventLoopFuture`.
     @inlinable
     @preconcurrency
     public func whenSuccess(_ callback: @escaping @Sendable (Value) -> Void) {
@@ -832,8 +847,8 @@ extension EventLoopFuture {
     /// If you find yourself passing the results from this `EventLoopFuture` to a new `EventLoopPromise`
     /// in the body of this function, consider using `cascade` instead.
     ///
-    /// - parameters:
-    ///     - callback: The callback that is called with the failed result of the `EventLoopFuture`.
+    /// - Parameters:
+    ///   - callback: The callback that is called with the failed result of the `EventLoopFuture`.
     @inlinable
     @preconcurrency
     public func whenFailure(_ callback: @escaping @Sendable (Error) -> Void) {
@@ -848,8 +863,8 @@ extension EventLoopFuture {
     /// Adds an observer callback to this `EventLoopFuture` that is called when the
     /// `EventLoopFuture` has any result.
     ///
-    /// - parameters:
-    ///     - callback: The callback that is called when the `EventLoopFuture` is fulfilled.
+    /// - Parameters:
+    ///   - callback: The callback that is called when the `EventLoopFuture` is fulfilled.
     @inlinable
     @preconcurrency
     public func whenComplete(_ callback: @escaping @Sendable (Result<Value, Error>) -> Void) {
@@ -976,7 +991,7 @@ extension EventLoopFuture {
     /// - Note: The `Value` must be `Sendable` since the isolation domains of this future and the promise might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - Parameter to: The `EventLoopPromise` to fulfill with the results of this future.
+    /// - Parameter promise: The `EventLoopPromise` to fulfill with the results of this future.
     /// - SeeAlso: `EventLoopPromise.completeWith(_:)`
     @preconcurrency
     @inlinable
@@ -1004,7 +1019,7 @@ extension EventLoopFuture {
     /// - Note: The `Value` must be `Sendable` since the isolation domains of this future and the promise might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - Parameter to: The `EventLoopPromise` to fulfill when a successful result is available.
+    /// - Parameter promise: The `EventLoopPromise` to fulfill when a successful result is available.
     @preconcurrency
     @inlinable
     public func cascadeSuccess(to promise: EventLoopPromise<Value>?) where Value: Sendable {
@@ -1018,7 +1033,7 @@ extension EventLoopFuture {
     /// error cases, while passing the user `EventLoopPromise` onwards.
     ///
     ///
-    /// - Parameter to: The `EventLoopPromise` that should fail with the error of this `EventLoopFuture`.
+    /// - Parameter promise: The `EventLoopPromise` that should fail with the error of this `EventLoopFuture`.
     @inlinable
     public func cascadeFailure<NewValue>(to promise: EventLoopPromise<NewValue>?) {
         guard let promise = promise else { return }
@@ -1042,17 +1057,18 @@ extension EventLoopFuture {
     ///
     /// - Note: The `Value` must be `Sendable` since it is shared outside of the isolation domain of the event loop.
     ///
-    /// - returns: The value of the `EventLoopFuture` when it completes.
-    /// - throws: The error value of the `EventLoopFuture` if it errors.
+    /// - Returns: The value of the `EventLoopFuture` when it completes.
+    /// - Throws: The error value of the `EventLoopFuture` if it errors.
     @available(*, noasync, message: "wait() can block indefinitely, prefer get()", renamed: "get()")
     @preconcurrency
     @inlinable
     public func wait(file: StaticString = #file, line: UInt = #line) throws -> Value where Value: Sendable {
-        try self._wait(file: file, line: line)
+        try self._blockingWaitForFutureCompletion(file: file, line: line)
     }
 
     @inlinable
-    func _wait(file: StaticString, line: UInt) throws -> Value where Value: Sendable {
+    @inline(never)
+    func _blockingWaitForFutureCompletion(file: StaticString, line: UInt) throws -> Value where Value: Sendable {
         self.eventLoop._preconditionSafeToWait(file: file, line: line)
 
         let v: UnsafeMutableTransferBox<Result<Value, Error>?> = .init(nil)
@@ -1093,10 +1109,10 @@ extension EventLoopFuture {
     /// - Note: The `Value` and `NewValue` must be `Sendable` since the isolation domains of this future and the other futures might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - futures: An array of `EventLoopFuture<NewValue>` to wait for.
-    ///     - with: A function that will be used to fold the values of two `EventLoopFuture`s and return a new value wrapped in an `EventLoopFuture`.
-    /// - returns: A new `EventLoopFuture` with the folded value whose callbacks run on `self.eventLoop`.
+    /// - Parameters:
+    ///   - futures: An array of `EventLoopFuture<NewValue>` to wait for.
+    ///   - combiningFunction: A function that will be used to fold the values of two `EventLoopFuture`s and return a new value wrapped in an `EventLoopFuture`.
+    /// - Returns: A new `EventLoopFuture` with the folded value whose callbacks run on `self.eventLoop`.
     @inlinable
     @preconcurrency
     public func fold<OtherValue: Sendable>(
@@ -1149,12 +1165,12 @@ extension EventLoopFuture {
     /// - Note: The `Value` and `InputValue` must be `Sendable` since the isolation domains of this future and the other futures might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - initialResult: An initial result to begin the reduction.
-    ///     - futures: An array of `EventLoopFuture` to wait for.
-    ///     - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
-    ///     - nextPartialResult: The bifunction used to produce partial results.
-    /// - returns: A new `EventLoopFuture` with the reduced value.
+    /// - Parameters:
+    ///   - initialResult: An initial result to begin the reduction.
+    ///   - futures: An array of `EventLoopFuture` to wait for.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
+    ///   - nextPartialResult: The bifunction used to produce partial results.
+    /// - Returns: A new `EventLoopFuture` with the reduced value.
     @preconcurrency
     @inlinable
     public static func reduce<InputValue: Sendable>(
@@ -1197,12 +1213,12 @@ extension EventLoopFuture {
     /// - Note: The `Value` and `InputValue` must be `Sendable` since the isolation domains of this future and the other futures might differ i.e.
     /// they might be bound to different event loops.
     ///
-    /// - parameters:
-    ///     - initialResult: An initial result to begin the reduction.
-    ///     - futures: An array of `EventLoopFuture` to wait for.
-    ///     - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
-    ///     - updateAccumulatingResult: The bifunction used to combine partialResults with new elements.
-    /// - returns: A new `EventLoopFuture` with the combined value.
+    /// - Parameters:
+    ///   - initialResult: An initial result to begin the reduction.
+    ///   - futures: An array of `EventLoopFuture` to wait for.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
+    ///   - updateAccumulatingResult: The bifunction used to combine partialResults with new elements.
+    /// - Returns: A new `EventLoopFuture` with the combined value.
     @inlinable
     @preconcurrency
     public static func reduce<InputValue: Sendable>(
@@ -1246,8 +1262,8 @@ extension EventLoopFuture {
     ///
     /// If it is desired to always succeed, regardless of failures, use `andAllComplete` instead.
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFutures`s to wait for.
-    ///     - on: The `EventLoop` on which the new `EventLoopFuture` callbacks will execute on.
+    ///   - futures: An array of homogenous `EventLoopFutures`s to wait for.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will execute on.
     /// - Returns: A new `EventLoopFuture` that waits for the other futures to succeed.
     @inlinable
     public static func andAllSucceed(
@@ -1265,8 +1281,8 @@ extension EventLoopFuture {
     /// If the results of all futures should be collected use `andAllComplete` instead.
     ///
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFutures`s to wait for.
-    ///     - promise: The `EventLoopPromise` to complete with the result of this call.
+    ///   - futures: An array of homogenous `EventLoopFutures`s to wait for.
+    ///   - promise: The `EventLoopPromise` to complete with the result of this call.
     @inlinable
     public static func andAllSucceed(
         _ futures: [EventLoopFuture<Value>],
@@ -1292,8 +1308,8 @@ extension EventLoopFuture {
     /// they might be bound to different event loops.
     ///
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFuture`s to wait on for fulfilled values.
-    ///     - on: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
+    ///   - futures: An array of homogenous `EventLoopFuture`s to wait on for fulfilled values.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
     /// - Returns: A new `EventLoopFuture` with all of the values fulfilled by the provided futures.
     @preconcurrency
     public static func whenAllSucceed(
@@ -1314,8 +1330,8 @@ extension EventLoopFuture {
     /// they might be bound to different event loops.
     ///
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFutures`s to wait for.
-    ///     - promise: The `EventLoopPromise` to complete with the result of this call.
+    ///   - futures: An array of homogenous `EventLoopFutures`s to wait for.
+    ///   - promise: The `EventLoopPromise` to complete with the result of this call.
     @preconcurrency
     public static func whenAllSucceed(
         _ futures: [EventLoopFuture<Value>],
@@ -1481,8 +1497,8 @@ extension EventLoopFuture {
     ///
     /// If the results are needed, use `whenAllComplete` instead.
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFuture`s to wait for.
-    ///     - on: The `EventLoop` on which the new `EventLoopFuture` callbacks will execute on.
+    ///   - futures: An array of homogenous `EventLoopFuture`s to wait for.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will execute on.
     /// - Returns: A new `EventLoopFuture` that succeeds after all futures complete.
     @inlinable
     public static func andAllComplete(
@@ -1501,8 +1517,8 @@ extension EventLoopFuture {
     /// If the results are required, use `whenAllComplete` instead.
     ///
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFuture`s to wait for.
-    ///     - promise: The `EventLoopPromise` to succeed when all futures have completed.
+    ///   - futures: An array of homogenous `EventLoopFuture`s to wait for.
+    ///   - promise: The `EventLoopPromise` to succeed when all futures have completed.
     @inlinable
     public static func andAllComplete(
         _ futures: [EventLoopFuture<Value>],
@@ -1530,8 +1546,8 @@ extension EventLoopFuture {
     /// If it is desired to flatten them into a single `EventLoopFuture` that fails on the first `EventLoopFuture` failure,
     /// use one of the `reduce` methods instead.
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFuture`s to gather results from.
-    ///     - on: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
+    ///   - futures: An array of homogenous `EventLoopFuture`s to gather results from.
+    ///   - eventLoop: The `EventLoop` on which the new `EventLoopFuture` callbacks will fire.
     /// - Returns: A new `EventLoopFuture` with all the results of the provided futures.
     @preconcurrency
     @inlinable
@@ -1552,8 +1568,8 @@ extension EventLoopFuture {
     /// they might be bound to different event loops.
     ///
     /// - Parameters:
-    ///     - futures: An array of homogenous `EventLoopFuture`s to gather results from.
-    ///     - promise: The `EventLoopPromise` to complete with the result of the futures.
+    ///   - futures: An array of homogenous `EventLoopFuture`s to gather results from.
+    ///   - promise: The `EventLoopPromise` to complete with the result of the futures.
     @preconcurrency
     @inlinable
     public static func whenAllComplete(
@@ -1715,9 +1731,9 @@ extension EventLoopFuture {
     ///
     /// - Note: The `Value` must be `Sendable` since it is shared with the isolation domain of the target event loop.
     ///
-    /// - parameters:
-    ///     - to: The `EventLoop` that the returned `EventLoopFuture` will run on.
-    /// - returns: An `EventLoopFuture` whose callbacks run on `target` instead of the original loop.
+    /// - Parameters:
+    ///   - target: The `EventLoop` that the returned `EventLoopFuture` will run on.
+    /// - Returns: An `EventLoopFuture` whose callbacks run on `target` instead of the original loop.
     @preconcurrency
     @inlinable
     public func hop(to target: EventLoop) -> EventLoopFuture<Value> where Value: Sendable {
@@ -1737,9 +1753,9 @@ extension EventLoopFuture {
     /// Adds an observer callback to this `EventLoopFuture` that is called when the
     /// `EventLoopFuture` has any result.
     ///
-    /// - parameters:
-    ///     - callback: the callback that is called when the `EventLoopFuture` is fulfilled.
-    /// - returns: the current `EventLoopFuture`
+    /// - Parameters:
+    ///   - callback: the callback that is called when the `EventLoopFuture` is fulfilled.
+    /// - Returns: the current `EventLoopFuture`
     @inlinable
     @preconcurrency
     public func always(_ callback: @escaping @Sendable (Result<Value, Error>) -> Void) -> EventLoopFuture<Value> {
@@ -1764,16 +1780,16 @@ extension EventLoopFuture {
     /// }
     /// ```
     ///
-    /// - parameters:
-    ///     - orError: the `Error` that is thrown when then resolved future's value is `Optional.none`.
-    /// - returns: an new `EventLoopFuture` with new type parameter `NewValue` and the same value as the resolved
+    /// - Parameters:
+    ///   - orError: the `Error` that is thrown when then resolved future's value is `Optional.none`.
+    /// - Returns: an new `EventLoopFuture` with new type parameter `NewValue` and the same value as the resolved
     ///     future.
-    /// - throws: the `Error` passed in the `orError` parameter when the resolved future's value is `Optional.none`.
+    /// - Throws: the `Error` passed in the `orError` parameter when the resolved future's value is `Optional.none`.
     @inlinable
-    public func unwrap<NewValue>(orError error: Error) -> EventLoopFuture<NewValue> where Value == NewValue? {
+    public func unwrap<NewValue>(orError: Error) -> EventLoopFuture<NewValue> where Value == NewValue? {
         self.flatMapThrowing { (value) throws -> NewValue in
             guard let value = value else {
-                throw error
+                throw orError
             }
             return value
         }
@@ -1787,9 +1803,9 @@ extension EventLoopFuture {
     /// promise.futureResult.unwrap(orReplace: 42).wait()
     /// ```
     ///
-    /// - parameters:
-    ///     - orReplace: the value of the returned `EventLoopFuture` when then resolved future's value is `Optional.some()`.
-    /// - returns: an new `EventLoopFuture` with new type parameter `NewValue` and the value passed in the `orReplace` parameter.
+    /// - Parameters:
+    ///   - replacement: the value of the returned `EventLoopFuture` when then resolved future's value is `Optional.some()`.
+    /// - Returns: an new `EventLoopFuture` with new type parameter `NewValue` and the value passed in the `replacement` parameter.
     @preconcurrency
     @inlinable
     public func unwrap<NewValue: Sendable>(
@@ -1812,11 +1828,11 @@ extension EventLoopFuture {
     /// promise.futureResult.unwrap(orElse: { x * 2 }).wait()
     /// ```
     ///
-    /// - parameters:
-    ///     - orElse: a closure that returns the value of the returned `EventLoopFuture` when then resolved future's value
+    /// - Parameters:
+    ///   - callback: a closure that returns the value of the returned `EventLoopFuture` when then resolved future's value
     ///         is `Optional.some()`.
-    /// - returns: an new `EventLoopFuture` with new type parameter `NewValue` and with the value returned by the closure
-    ///     passed in the `orElse` parameter.
+    /// - Returns: an new `EventLoopFuture` with new type parameter `NewValue` and with the value returned by the closure
+    ///     passed in the `callback` parameter.
     @inlinable
     @preconcurrency
     public func unwrap<NewValue>(
@@ -1851,9 +1867,9 @@ extension EventLoopFuture {
     ///
     /// - Note: The `Value` and `NewValue` must be `Sendable` since it is shared between the isolation region queue and the event loop.
     ///
-    /// - parameters:
-    ///     - onto: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
-    ///     - callbackMayBlock: Function that will receive the value of this `EventLoopFuture` and return
+    /// - Parameters:
+    ///   - queue: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
+    ///   - callbackMayBlock: Function that will receive the value of this `EventLoopFuture` and return
     ///         a new `EventLoopFuture`.
     @inlinable
     @preconcurrency
@@ -1876,9 +1892,9 @@ extension EventLoopFuture {
     ///
     /// - Note: The `NewValue` must be `Sendable` since it is shared between the isolation region queue and the event loop.
     ///
-    /// - parameters:
-    ///     - onto: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
-    ///     - callbackMayBlock: The callback that is called with the successful result of the `EventLoopFuture`.
+    /// - Parameters:
+    ///   - queue: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
+    ///   - callbackMayBlock: The callback that is called with the successful result of the `EventLoopFuture`.
     @preconcurrency
     @inlinable
     public func whenSuccessBlocking(
@@ -1898,9 +1914,9 @@ extension EventLoopFuture {
     /// If you find yourself passing the results from this `EventLoopFuture` to a new `EventLoopPromise`
     /// in the body of this function, consider using `cascade` instead.
     ///
-    /// - parameters:
-    ///     - onto: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
-    ///     - callbackMayBlock: The callback that is called with the failed result of the `EventLoopFuture`.
+    /// - Parameters:
+    ///   - queue: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
+    ///   - callbackMayBlock: The callback that is called with the failed result of the `EventLoopFuture`.
     @inlinable
     @preconcurrency
     public func whenFailureBlocking(
@@ -1923,9 +1939,9 @@ extension EventLoopFuture {
     ///
     /// - Note: The `NewValue` must be `Sendable` since it is shared between the isolation region queue and the event loop.
     ///
-    /// - parameters:
-    ///     - onto: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
-    ///     - callbackMayBlock: The callback that is called when the `EventLoopFuture` is fulfilled.
+    /// - Parameters:
+    ///   - queue: the `DispatchQueue` on which the blocking IO / task specified by `callbackMayBlock` is scheduled.
+    ///   - callbackMayBlock: The callback that is called when the `EventLoopFuture` is fulfilled.
     @inlinable
     @preconcurrency
     public func whenCompleteBlocking(
@@ -1947,9 +1963,9 @@ extension EventLoopFuture {
     /// If the original future fails, it triggers an assertion failure, causing a runtime error during development.
     /// The assertion failure will include the file and line of the calling site.
     ///
-    /// - parameters:
-    ///     - file: The file this function was called in, for debugging purposes.
-    ///     - line: The line this function was called on, for debugging purposes.
+    /// - Parameters:
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
     @inlinable
     public func assertSuccess(file: StaticString = #fileID, line: UInt = #line) -> EventLoopFuture<Value> {
         self.always { result in
@@ -1966,9 +1982,9 @@ extension EventLoopFuture {
     /// If the original future succeeds, it triggers an assertion failure, causing a runtime error during development.
     /// The assertion failure will include the file and line of the calling site.
     ///
-    /// - parameters:
-    ///     - file: The file this function was called in, for debugging purposes.
-    ///     - line: The line this function was called on, for debugging purposes.
+    /// - Parameters:
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
     @inlinable
     public func assertFailure(file: StaticString = #fileID, line: UInt = #line) -> EventLoopFuture<Value> {
         self.always { result in
@@ -1986,9 +2002,9 @@ extension EventLoopFuture {
     /// If the original future fails, it triggers a precondition failure, causing a runtime error during development.
     /// The precondition failure will include the file and line of the calling site.
     ///
-    /// - parameters:
-    ///     - file: The file this function was called in, for debugging purposes.
-    ///     - line: The line this function was called on, for debugging purposes.
+    /// - Parameters:
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
     @inlinable
     public func preconditionSuccess(file: StaticString = #fileID, line: UInt = #line) -> EventLoopFuture<Value> {
         self.always { result in
@@ -2006,9 +2022,9 @@ extension EventLoopFuture {
     /// If the original future succeeds, it triggers a precondition failure, causing a runtime error during development.
     /// The precondition failure will include the file and line of the calling site.
     ///
-    /// - parameters:
-    ///     - file: The file this function was called in, for debugging purposes.
-    ///     - line: The line this function was called on, for debugging purposes.
+    /// - Parameters:
+    ///   - file: The file this function was called in, for debugging purposes.
+    ///   - line: The line this function was called on, for debugging purposes.
     @inlinable
     public func preconditionFailure(file: StaticString = #fileID, line: UInt = #line) -> EventLoopFuture<Value> {
         self.always { result in

@@ -33,14 +33,14 @@ extension NIOSingletons {
     /// operation doesn't guarantee anything because another piece of code could have done the same without using atomic operations. But we
     /// do our best.
     ///
-    /// - returns: If ``MultiThreadedEventLoopGroup/singleton`` was successfully installed as Swift Concurrency's global executor or not.
+    /// - Returns: If ``MultiThreadedEventLoopGroup/singleton`` was successfully installed as Swift Concurrency's global executor or not.
     ///
     /// - warning: You may only call this method from the main thread.
     /// - warning: You may only call this method once.
     @discardableResult
     public static func unsafeTryInstallSingletonPosixEventLoopGroupAsConcurrencyGlobalExecutor() -> Bool {
         // Guard between the minimum and maximum supported version for the hook
-        #if compiler(>=5.9) && compiler(<6.2)
+        #if compiler(>=5.9) && compiler(<6.3)
         guard #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) else {
             return false
         }

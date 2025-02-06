@@ -44,10 +44,9 @@ public struct VsockAddress: Hashable, Sendable {
 
     /// Creates a new vsock address.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///   - cid: the context ID.
     ///   - port: the target port.
-    /// - returns: the address for the given context ID and port combination.
     public init(cid: ContextID, port: Port) {
         self.cid = cid
         self.port = port
@@ -218,7 +217,7 @@ extension VsockAddress.ContextID {
     /// - On Darwin, the `ioctl()` request operates on a socket.
     /// - On Linux, the `ioctl()` request operates on the `/dev/vsock` device.
     ///
-    /// - Note: On Linux, ``local`` may be a better choice.
+    /// - Note: The semantics of this `ioctl` vary between vsock transports on Linux; ``local`` may be more suitable.
     static func getLocalContextID(_ socketFD: NIOBSDSocket.Handle) throws -> Self {
         #if canImport(Darwin)
         let request = CNIODarwin_IOCTL_VM_SOCKETS_GET_LOCAL_CID

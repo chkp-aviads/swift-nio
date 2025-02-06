@@ -28,13 +28,29 @@ import Darwin
 import Glibc
 #elseif canImport(Musl)
 import Musl
-#elseif canImport(Bionic)
-import Bionic
+#elseif canImport(Android)
+import Android
 #elseif canImport(WASILibc)
 import WASILibc
 #else
 #error("Unknown C library.")
 #endif
+
+private func printError(_ string: StaticString) {
+    string.withUTF8Buffer { buf in
+        var buf = buf
+        while buf.count > 0 {
+            // 2 is stderr
+            let rc = write(2, buf.baseAddress, buf.count)
+            if rc < 0 {
+                let err = errno
+                if err == EINTR { continue }
+                fatalError("Unexpected error writing: \(err)")
+            }
+            buf = .init(rebasing: buf.dropFirst(Int(rc)))
+        }
+    }
+}
 
 internal struct EmbeddedScheduledTask {
     let id: UInt64
@@ -94,8 +110,9 @@ extension EmbeddedScheduledTask: Comparable {
 ///     responsible for ensuring they never call into the `EmbeddedEventLoop` in an
 ///     unsynchronized fashion.
 public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
+    private var _now: NIODeadline = .uptimeNanoseconds(0)
     /// The current "time" for this event loop. This is an amount in nanoseconds.
-    internal var _now: NIODeadline = .uptimeNanoseconds(0)
+    public var now: NIODeadline { _now }
 
     private enum State { case open, closing, closed }
     private var state: State = .open
@@ -113,7 +130,7 @@ public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
 
     public let description = "EmbeddedEventLoop"
 
-    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl) || canImport(Bionic)
+    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl) || canImport(Android)
     private let myThread: pthread_t = pthread_self()
 
     func isCorrectThread() -> Bool {
@@ -145,14 +162,13 @@ public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
                     "EmbeddedEventLoop is not thread-safe. You can only use it from the thread you created it on."
                 )
             } else {
-                fputs(
+                printError(
                     """
                     ERROR: NIO API misuse: EmbeddedEventLoop is not thread-safe. \
                     You can only use it from the thread you created it on. This problem will be upgraded to a forced \
                     crash in future versions of SwiftNIO.
 
-                    """,
-                    stderr
+                    """
                 )
             }
             return
@@ -184,7 +200,7 @@ public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
             insertOrder: self.nextTaskNumber(),
             task: {
                 do {
-                    promise.succeed(try task())
+                    promise.assumeIsolated().succeed(try task())
                 } catch let err {
                     promise.fail(err)
                 }
@@ -303,6 +319,16 @@ public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
     }
     #endif
 
+    public func preconditionInEventLoop(file: StaticString, line: UInt) {
+        self.checkCorrectThread()
+        // Currently, inEventLoop is always true so this always passes.
+    }
+
+    public func preconditionNotInEventLoop(file: StaticString, line: UInt) {
+        // As inEventLoop always returns true, this must always preconditon.
+        preconditionFailure("Always in EmbeddedEventLoop", file: file, line: line)
+    }
+
     public func _preconditionSafeToWait(file: StaticString, line: UInt) {
         self.checkCorrectThread()
         // EmbeddedEventLoop always allows a wait, as waiting will essentially always block
@@ -353,6 +379,11 @@ public final class EmbeddedEventLoop: EventLoop, CustomStringConvertible {
         return false
     }()
 }
+
+// EmbeddedEventLoop is extremely _not_ Sendable. However, the EventLoop protocol
+// requires it to be. We are doing some runtime enforcement of correct use, but
+// ultimately we can't have the compiler validating this usage.
+extension EmbeddedEventLoop: @unchecked Sendable {}
 
 @usableFromInline
 class EmbeddedChannelCore: ChannelCore {
@@ -473,8 +504,11 @@ class EmbeddedChannelCore: ChannelCore {
         self.pipeline.syncOperations.fireChannelInactive()
         self.pipeline.syncOperations.fireChannelUnregistered()
 
+        let loopBoundSelf = NIOLoopBound(self, eventLoop: self.eventLoop)
+
         eventLoop.execute {
             // ensure this is executed in a delayed fashion as the users code may still traverse the pipeline
+            let `self` = loopBoundSelf.value
             self.removeHandlers(pipeline: self.pipeline)
             self.closePromise.succeed(())
         }
@@ -572,6 +606,10 @@ class EmbeddedChannelCore: ChannelCore {
     }
 }
 
+// ChannelCores are basically never Sendable.
+@available(*, unavailable)
+extension EmbeddedChannelCore: Sendable {}
+
 /// `EmbeddedChannel` is a `Channel` implementation that does neither any
 /// actual IO nor has a proper eventing mechanism. The prime use-case for
 /// `EmbeddedChannel` is in unit tests when you want to feed the inbound events
@@ -590,7 +628,7 @@ class EmbeddedChannelCore: ChannelCore {
 /// `EmbeddedChannel` automatically collects arriving outbound data and makes it
 /// available one-by-one through `readOutbound`.
 ///
-/// - note: `EmbeddedChannel` is currently only compatible with
+/// - Note: `EmbeddedChannel` is currently only compatible with
 ///   `EmbeddedEventLoop`s and cannot be used with `SelectableEventLoop`s from
 ///   for example `MultiThreadedEventLoopGroup`.
 /// - warning: Unlike other `Channel`s, `EmbeddedChannel` **is not thread-safe**. This
@@ -681,7 +719,7 @@ public final class EmbeddedChannel: Channel {
     ///
     /// An active `EmbeddedChannel` can be closed by calling `close` or `finish` on the `EmbeddedChannel`.
     ///
-    /// - note: An `EmbeddedChannel` starts _inactive_ and can be activated, for example by calling `connect`.
+    /// - Note: An `EmbeddedChannel` starts _inactive_ and can be activated, for example by calling `connect`.
     public var isActive: Bool { channelcore.isActive }
 
     /// - see: `ChannelOptions.Types.AllowRemoteHalfClosureOption`
@@ -724,9 +762,9 @@ public final class EmbeddedChannel: Channel {
     ///
     /// Errors in the `EmbeddedChannel` can be consumed using `throwIfErrorCaught`.
     ///
-    /// - parameters:
-    ///     - acceptAlreadyClosed: Whether `finish` should throw if the `EmbeddedChannel` has been previously `close`d.
-    /// - returns: The `LeftOverState` of the `EmbeddedChannel`. If all the inbound and outbound events have been
+    /// - Parameters:
+    ///   - acceptAlreadyClosed: Whether `finish` should throw if the `EmbeddedChannel` has been previously `close`d.
+    /// - Returns: The `LeftOverState` of the `EmbeddedChannel`. If all the inbound and outbound events have been
     ///            consumed (using `readInbound` / `readOutbound`) and there are no pending outbound events (unflushed
     ///            writes) this will be `.clean`. If there are any unconsumed inbound, outbound, or pending outbound
     ///            events, the `EmbeddedChannel` will returns those as `.leftOvers(inbound:outbound:pendingOutbound:)`.
@@ -759,7 +797,7 @@ public final class EmbeddedChannel: Channel {
     /// This method will throw if the `Channel` hit any unconsumed errors or if the `close` fails. Errors in the
     /// `EmbeddedChannel` can be consumed using `throwIfErrorCaught`.
     ///
-    /// - returns: The `LeftOverState` of the `EmbeddedChannel`. If all the inbound and outbound events have been
+    /// - Returns: The `LeftOverState` of the `EmbeddedChannel`. If all the inbound and outbound events have been
     ///            consumed (using `readInbound` / `readOutbound`) and there are no pending outbound events (unflushed
     ///            writes) this will be `.clean`. If there are any unconsumed inbound, outbound, or pending outbound
     ///            events, the `EmbeddedChannel` will returns those as `.leftOvers(inbound:outbound:pendingOutbound:)`.
@@ -819,8 +857,8 @@ public final class EmbeddedChannel: Channel {
     /// first `ChannelHandler` must have written and flushed it either explicitly (by calling
     /// `ChannelHandlerContext.write` and `flush`) or implicitly by not implementing `write`/`flush`.
     ///
-    /// - note: Outbound events travel the `ChannelPipeline` _back to front_.
-    /// - note: `EmbeddedChannel.writeOutbound` will `write` data through the `ChannelPipeline`, starting with last
+    /// - Note: Outbound events travel the `ChannelPipeline` _back to front_.
+    /// - Note: `EmbeddedChannel.writeOutbound` will `write` data through the `ChannelPipeline`, starting with last
     ///         `ChannelHandler`.
     @inlinable
     public func readOutbound<T>(as type: T.Type = T.self) throws -> T? {
@@ -837,7 +875,7 @@ public final class EmbeddedChannel: Channel {
     /// last `ChannelHandler` must have send the event either explicitly (by calling
     /// `ChannelHandlerContext.fireChannelRead`) or implicitly by not implementing `channelRead`.
     ///
-    /// - note: `EmbeddedChannel.writeInbound` will fire data through the `ChannelPipeline` using `fireChannelRead`.
+    /// - Note: `EmbeddedChannel.writeInbound` will fire data through the `ChannelPipeline` using `fireChannelRead`.
     @inlinable
     public func readInbound<T>(as type: T.Type = T.self) throws -> T? {
         self.embeddedEventLoop.checkCorrectThread()
@@ -849,15 +887,15 @@ public final class EmbeddedChannel: Channel {
     /// The immediate effect being that the first `ChannelInboundHandler` will get its `channelRead` method called
     /// with the data you provide.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///    - data: The data to fire through the pipeline.
-    /// - returns: The state of the inbound buffer which contains all the events that travelled the `ChannelPipeline`
+    /// - Returns: The state of the inbound buffer which contains all the events that travelled the `ChannelPipeline`
     //             all the way.
     @inlinable
     @discardableResult public func writeInbound<T>(_ data: T) throws -> BufferState {
         self.embeddedEventLoop.checkCorrectThread()
-        self.pipeline.fireChannelRead(NIOAny(data))
-        self.pipeline.fireChannelReadComplete()
+        self.pipeline.syncOperations.fireChannelRead(NIOAny(data))
+        self.pipeline.syncOperations.fireChannelReadComplete()
         try self.throwIfErrorCaught()
         return self.channelcore.inboundBuffer.isEmpty ? .empty : .full(Array(self.channelcore.inboundBuffer))
     }
@@ -868,14 +906,14 @@ public final class EmbeddedChannel: Channel {
     /// with the data you provide. Note that the first `ChannelOutboundHandler` in the pipeline is the _last_ handler
     /// because outbound events travel the pipeline from back to front.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///    - data: The data to fire through the pipeline.
-    /// - returns: The state of the outbound buffer which contains all the events that travelled the `ChannelPipeline`
+    /// - Returns: The state of the outbound buffer which contains all the events that travelled the `ChannelPipeline`
     //             all the way.
     @inlinable
     @discardableResult public func writeOutbound<T>(_ data: T) throws -> BufferState {
         self.embeddedEventLoop.checkCorrectThread()
-        try self.writeAndFlush(NIOAny(data)).wait()
+        try self.writeAndFlush(data).wait()
         return self.channelcore.outboundBuffer.isEmpty ? .empty : .full(Array(self.channelcore.outboundBuffer))
     }
 
@@ -910,9 +948,9 @@ public final class EmbeddedChannel: Channel {
     ///
     /// During creation it will automatically also register itself on the `EmbeddedEventLoop`.
     ///
-    /// - parameters:
-    ///     - handler: The `ChannelHandler` to add to the `ChannelPipeline` before register or `nil` if none should be added.
-    ///     - loop: The `EmbeddedEventLoop` to use.
+    /// - Parameters:
+    ///   - handler: The `ChannelHandler` to add to the `ChannelPipeline` before register or `nil` if none should be added.
+    ///   - loop: The `EmbeddedEventLoop` to use.
     public convenience init(handler: ChannelHandler? = nil, loop: EmbeddedEventLoop = EmbeddedEventLoop()) {
         let handlers = handler.map { [$0] } ?? []
         self.init(handlers: handlers, loop: loop)
@@ -923,9 +961,9 @@ public final class EmbeddedChannel: Channel {
     ///
     /// During creation it will automatically also register itself on the `EmbeddedEventLoop`.
     ///
-    /// - parameters:
-    ///     - handlers: The `ChannelHandler`s to add to the `ChannelPipeline` before register.
-    ///     - loop: The `EmbeddedEventLoop` to use.
+    /// - Parameters:
+    ///   - handlers: The `ChannelHandler`s to add to the `ChannelPipeline` before register.
+    ///   - loop: The `EmbeddedEventLoop` to use.
     public init(handlers: [ChannelHandler], loop: EmbeddedEventLoop = EmbeddedEventLoop()) {
         self.embeddedEventLoop = loop
         self._pipeline = ChannelPipeline(channel: self)
@@ -987,9 +1025,9 @@ public final class EmbeddedChannel: Channel {
     /// happens when it travels the `ChannelPipeline` all the way to the front, this will also set the
     /// `EmbeddedChannel`'s `localAddress`.
     ///
-    /// - parameters:
-    ///     - address: The address to fake-bind to.
-    ///     - promise: The `EventLoopPromise` which will be fulfilled when the fake-bind operation has been done.
+    /// - Parameters:
+    ///   - address: The address to fake-bind to.
+    ///   - promise: The `EventLoopPromise` which will be fulfilled when the fake-bind operation has been done.
     public func bind(to address: SocketAddress, promise: EventLoopPromise<Void>?) {
         self.embeddedEventLoop.checkCorrectThread()
         promise?.futureResult.whenSuccess {
@@ -1002,15 +1040,51 @@ public final class EmbeddedChannel: Channel {
     /// which happens when it travels the `ChannelPipeline` all the way to the front, this will also set the
     /// `EmbeddedChannel`'s `remoteAddress`.
     ///
-    /// - parameters:
-    ///     - address: The address to fake-bind to.
-    ///     - promise: The `EventLoopPromise` which will be fulfilled when the fake-bind operation has been done.
+    /// - Parameters:
+    ///   - address: The address to fake-bind to.
+    ///   - promise: The `EventLoopPromise` which will be fulfilled when the fake-bind operation has been done.
     public func connect(to address: SocketAddress, promise: EventLoopPromise<Void>?) {
         self.embeddedEventLoop.checkCorrectThread()
         promise?.futureResult.whenSuccess {
             self.remoteAddress = address
         }
         self.pipeline.connect(to: address, promise: promise)
+    }
+
+    /// An overload of `Channel.write` that does not require a Sendable type, as ``EmbeddedEventLoop``
+    /// is bound to a single thread.
+    @inlinable
+    public func write<T>(_ data: T, promise: EventLoopPromise<Void>?) {
+        self.embeddedEventLoop.checkCorrectThread()
+        self.pipeline.syncOperations.write(NIOAny(data), promise: promise)
+    }
+
+    /// An overload of `Channel.write` that does not require a Sendable type, as ``EmbeddedEventLoop``
+    /// is bound to a single thread.
+    @inlinable
+    public func write<T>(_ data: T) -> EventLoopFuture<Void> {
+        self.embeddedEventLoop.checkCorrectThread()
+        let promise = self.eventLoop.makePromise(of: Void.self)
+        self.pipeline.syncOperations.write(NIOAny(data), promise: promise)
+        return promise.futureResult
+    }
+
+    /// An overload of `Channel.writeAndFlush` that does not require a Sendable type, as ``EmbeddedEventLoop``
+    /// is bound to a single thread.
+    @inlinable
+    public func writeAndFlush<T>(_ data: T, promise: EventLoopPromise<Void>?) {
+        self.embeddedEventLoop.checkCorrectThread()
+        self.pipeline.syncOperations.writeAndFlush(NIOAny(data), promise: promise)
+    }
+
+    /// An overload of `Channel.writeAndFlush` that does not require a Sendable type, as ``EmbeddedEventLoop``
+    /// is bound to a single thread.
+    @inlinable
+    public func writeAndFlush<T>(_ data: T) -> EventLoopFuture<Void> {
+        self.embeddedEventLoop.checkCorrectThread()
+        let promise = self.eventLoop.makePromise(of: Void.self)
+        self.pipeline.syncOperations.writeAndFlush(NIOAny(data), promise: promise)
+        return promise.futureResult
     }
 }
 
@@ -1038,6 +1112,17 @@ extension EmbeddedChannel {
         SynchronousOptions(channel: self)
     }
 }
+
+// EmbeddedChannel is extremely _not_ Sendable. However, the Channel protocol
+// requires it to be. We are doing some runtime enforcement of correct use, but
+// ultimately we can't have the compiler validating this usage.
+extension EmbeddedChannel: @unchecked Sendable {}
+
+@available(*, unavailable)
+extension EmbeddedChannel.LeftOverState: @unchecked Sendable {}
+
+@available(*, unavailable)
+extension EmbeddedChannel.BufferState: @unchecked Sendable {}
 
 @available(*, unavailable)
 extension EmbeddedChannel.SynchronousOptions: Sendable {}

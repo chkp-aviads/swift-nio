@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2021 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -100,7 +100,7 @@ public final class ChannelTests: XCTestCase {
 
         var buffer = clientChannel.allocator.buffer(capacity: 1)
         buffer.writeString("a")
-        try clientChannel.writeAndFlush(NIOAny(buffer)).wait()
+        try clientChannel.writeAndFlush(buffer).wait()
 
         let serverAcceptedChannel = try serverAcceptedChannelPromise.futureResult.wait()
 
@@ -153,11 +153,11 @@ public final class ChannelTests: XCTestCase {
         for _ in 0..<Socket.writevLimitIOVectors {
             buffer.clear()
             buffer.writeString("a")
-            clientChannel.write(NIOAny(buffer), promise: nil)
+            clientChannel.write(buffer, promise: nil)
         }
         buffer.clear()
         buffer.writeString("a")
-        try clientChannel.writeAndFlush(NIOAny(buffer)).wait()
+        try clientChannel.writeAndFlush(buffer).wait()
 
         // Start shutting stuff down.
         XCTAssertNoThrow(try clientChannel.close().wait())
@@ -189,11 +189,11 @@ public final class ChannelTests: XCTestCase {
         let lotsOfData = Int(Int32.max)
         var written: Int64 = 0
         while written <= lotsOfData {
-            clientChannel.write(NIOAny(buffer), promise: nil)
+            clientChannel.write(buffer, promise: nil)
             written += Int64(bufferSize)
         }
 
-        XCTAssertNoThrow(try clientChannel.writeAndFlush(NIOAny(buffer)).wait())
+        XCTAssertNoThrow(try clientChannel.writeAndFlush(buffer).wait())
 
         // Start shutting stuff down.
         XCTAssertNoThrow(try clientChannel.close().wait())
@@ -259,13 +259,13 @@ public final class ChannelTests: XCTestCase {
     ///
     /// The write operations will all be faked and return the return values provided in `returns`.
     ///
-    /// - parameters:
-    ///     - pwm: The `PendingStreamWritesManager` to test.
-    ///     - promises: The promises for the writes issued.
-    ///     - expectedSingleWritabilities: The expected buffer lengths for the calls to the single write operation.
-    ///     - expectedVectorWritabilities: The expected buffer lengths for the calls to the vector write operation.
-    ///     - returns: The return values of the fakes write operations (both single and vector).
-    ///     - promiseStates: The states of the promises _after_ the write operations are done.
+    /// - Parameters:
+    ///   - pwm: The `PendingStreamWritesManager` to test.
+    ///   - promises: The promises for the writes issued.
+    ///   - expectedSingleWritabilities: The expected buffer lengths for the calls to the single write operation.
+    ///   - expectedVectorWritabilities: The expected buffer lengths for the calls to the vector write operation.
+    ///   - returns: The return values of the fakes write operations (both single and vector).
+    ///   - promiseStates: The states of the promises _after_ the write operations are done.
     func assertExpectedWritability(
         pendingWritesManager pwm: PendingStreamWritesManager,
         promises: [EventLoopPromise<Void>],
@@ -776,7 +776,7 @@ public final class ChannelTests: XCTestCase {
             )
             buffer.clear()
             buffer.writeBytes([UInt8](repeating: 0xff, count: 1))
-            let handle = NIOFileHandle(descriptor: -1)
+            let handle = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
             defer {
                 // fake file handle, so don't actually close
                 XCTAssertNoThrow(try handle.takeDescriptorOwnership())
@@ -962,8 +962,8 @@ public final class ChannelTests: XCTestCase {
         try withPendingStreamWritesManager { pwm in
             let ps: [EventLoopPromise<Void>] = (0..<2).map { (_: Int) in el.makePromise() }
 
-            let fh1 = NIOFileHandle(descriptor: -1)
-            let fh2 = NIOFileHandle(descriptor: -2)
+            let fh1 = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
+            let fh2 = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -2)
             let fr1 = FileRegion(fileHandle: fh1, readerIndex: 12, endIndex: 14)
             let fr2 = FileRegion(fileHandle: fh2, readerIndex: 0, endIndex: 2)
             defer {
@@ -1027,7 +1027,7 @@ public final class ChannelTests: XCTestCase {
         try withPendingStreamWritesManager { pwm in
             let ps: [EventLoopPromise<Void>] = (0..<1).map { (_: Int) in el.makePromise() }
 
-            let fh = NIOFileHandle(descriptor: -1)
+            let fh = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
             let fr = FileRegion(fileHandle: fh, readerIndex: 99, endIndex: 99)
             defer {
                 // fake descriptor, so shouldn't be closed.
@@ -1061,8 +1061,8 @@ public final class ChannelTests: XCTestCase {
         try withPendingStreamWritesManager { pwm in
             let ps: [EventLoopPromise<Void>] = (0..<5).map { (_: Int) in el.makePromise() }
 
-            let fh1 = NIOFileHandle(descriptor: -1)
-            let fh2 = NIOFileHandle(descriptor: -1)
+            let fh1 = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
+            let fh2 = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
             let fr1 = FileRegion(fileHandle: fh1, readerIndex: 99, endIndex: 99)
             let fr2 = FileRegion(fileHandle: fh1, readerIndex: 0, endIndex: 10)
             defer {
@@ -1320,7 +1320,7 @@ public final class ChannelTests: XCTestCase {
         try withPendingStreamWritesManager { pwm in
             let ps: [EventLoopPromise<Void>] = (0..<1).map { (_: Int) in el.makePromise() }
 
-            let fh = NIOFileHandle(descriptor: -1)
+            let fh = NIOFileHandle(_deprecatedTakingOwnershipOfDescriptor: -1)
             let fr = FileRegion(fileHandle: fh, readerIndex: 0, endIndex: 8192)
             defer {
                 // fake descriptor, so shouldn't be closed.
@@ -1440,11 +1440,11 @@ public final class ChannelTests: XCTestCase {
         var buffer = channel.allocator.buffer(capacity: 12)
         buffer.writeString("1234")
 
-        try channel.writeAndFlush(NIOAny(buffer)).wait()
+        try channel.writeAndFlush(buffer).wait()
         try channel.close(mode: .output).wait()
 
         verificationHandler.waitForEvent()
-        XCTAssertThrowsError(try channel.writeAndFlush(NIOAny(buffer)).wait()) { error in
+        XCTAssertThrowsError(try channel.writeAndFlush(buffer).wait()) { error in
             XCTAssertEqual(.outputClosed, error as? ChannelError)
         }
         let written = try buffer.withUnsafeReadableBytes { p in
@@ -1565,7 +1565,7 @@ public final class ChannelTests: XCTestCase {
         var buffer = channel.allocator.buffer(capacity: 12)
         buffer.writeString("1234")
 
-        try channel.writeAndFlush(NIOAny(buffer)).wait()
+        try channel.writeAndFlush(buffer).wait()
     }
 
     func testInputAndOutputClosedResultsInFullClosure() throws {
@@ -1791,7 +1791,7 @@ public final class ChannelTests: XCTestCase {
             try pipeline.eventLoop.submit { () -> Channel in
                 XCTAssertTrue(pipeline.channel is DeadChannel)
                 return pipeline.channel
-            }.wait().writeAndFlush(NIOAny(())).wait()
+            }.wait().writeAndFlush(()).wait()
         ) { error in
             XCTAssertEqual(.ioOnClosedChannel, error as? ChannelError)
         }
@@ -2580,7 +2580,7 @@ public final class ChannelTests: XCTestCase {
                 .childChannelInitializer { channel in
                     var buffer = channel.allocator.buffer(capacity: 4)
                     buffer.writeString("foo")
-                    channel.writeAndFlush(NIOAny(buffer), promise: nil)
+                    channel.writeAndFlush(buffer, promise: nil)
                     return channel.eventLoop.makeSucceededVoidFuture()
                 }
                 .bind(host: "127.0.0.1", port: 0)
@@ -2953,7 +2953,9 @@ public final class ChannelTests: XCTestCase {
             func channelActive(context: ChannelHandlerContext) {
                 var buffer = context.channel.allocator.buffer(capacity: 1)
                 buffer.writeStaticString("X")
-                context.channel.writeAndFlush(Self.wrapOutboundOut(buffer)).map { context.channel }.cascade(
+                context.channel.writeAndFlush(buffer).map { [channel = context.channel] in
+                    channel
+                }.cascade(
                     to: self.channelAvailablePromise
                 )
             }
@@ -3003,7 +3005,8 @@ public final class ChannelTests: XCTestCase {
 
             func channelActive(context: ChannelHandlerContext) {
                 XCTAssert(serverChannel.eventLoop === context.eventLoop)
-                self.serverChannel.whenSuccess { serverChannel in
+                let loopBoundContext = context.loopBound
+                self.serverChannel.whenSuccess { [channel = context.channel] serverChannel in
                     // all of the following futures need to complete synchronously for this test to test the correct
                     // thing. Therefore we keep track if we're still on the same stack frame.
                     var inSameStackFrame = true
@@ -3014,9 +3017,10 @@ public final class ChannelTests: XCTestCase {
                     XCTAssertTrue(serverChannel.isActive)
                     // we allow auto-read again to make sure that the socket buffer is drained on write error
                     // (cf. https://github.com/apple/swift-nio/issues/593)
-                    context.channel.setOption(.autoRead, value: true).flatMap {
+                    channel.setOption(.autoRead, value: true).flatMap {
+                        let context = loopBoundContext.value
                         // let's trigger the write error
-                        var buffer = context.channel.allocator.buffer(capacity: 16)
+                        var buffer = channel.allocator.buffer(capacity: 16)
                         buffer.writeStaticString("THIS WILL FAIL ANYWAY")
 
                         // this needs to be in a function as otherwise the Swift compiler believes this is throwing
@@ -3025,7 +3029,7 @@ public final class ChannelTests: XCTestCase {
                             // arrived at the time the write fails. So this is a hack that makes sure they do have arrived.
                             // (https://github.com/apple/swift-nio/issues/657)
                             XCTAssertNoThrow(
-                                try self.veryNasty_blockUntilReadBufferIsNonEmpty(channel: context.channel)
+                                try self.veryNasty_blockUntilReadBufferIsNonEmpty(channel: channel)
                             )
                         }
                         workaroundSR487()
@@ -3435,7 +3439,7 @@ public final class ChannelTests: XCTestCase {
         let buffer = client.allocator.buffer(string: "abcd")
         let writeCount = 3
 
-        let promises = (0..<writeCount).map { _ in client.write(NIOAny(buffer)) }
+        let promises = (0..<writeCount).map { _ in client.write(buffer) }
         let bufferedAmount = try client.getOption(.bufferedWritableBytes).wait()
         XCTAssertEqual(bufferedAmount, buffer.readableBytes * writeCount)
         client.flush()
@@ -3464,10 +3468,10 @@ public final class ChannelTests: XCTestCase {
         let buffer = client.allocator.buffer(string: "abcd")
         let writeCount = 20
 
-        var promises = (0..<writeCount).map { _ in client.writeAndFlush(NIOAny(buffer)) }
+        var promises = (0..<writeCount).map { _ in client.writeAndFlush(buffer) }
         var bufferedAmount = try client.getOption(.bufferedWritableBytes).wait()
         XCTAssertTrue(bufferedAmount >= 0 && bufferedAmount <= buffer.readableBytes * writeCount)
-        promises.append(client.write(NIOAny(buffer)))
+        promises.append(client.write(buffer))
         bufferedAmount = try client.getOption(.bufferedWritableBytes).wait()
         XCTAssertTrue(
             bufferedAmount >= buffer.readableBytes && bufferedAmount <= buffer.readableBytes * (writeCount + 1)
@@ -3489,8 +3493,10 @@ private final class FailRegistrationAndDelayCloseHandler: ChannelOutboundHandler
     }
 
     func close(context: ChannelHandlerContext, mode: CloseMode, promise: EventLoopPromise<Void>?) {
+        let loopBoundContext = context.loopBound
         // for extra nastiness, let's delay close. This makes sure the ChannelPipeline correctly retains the Channel
         _ = context.eventLoop.scheduleTask(in: .milliseconds(10)) {
+            let context = loopBoundContext.value
             context.close(mode: mode, promise: promise)
         }
     }
@@ -3559,7 +3565,9 @@ final class ReentrantWritabilityChangingHandler: ChannelInboundHandler {
         // emitted. The flush for that write should result in the writability flipping back
         // again.
         let b1 = context.channel.allocator.buffer(repeating: 0, count: 50)
+        let loopBoundContext = context.loopBound
         context.write(Self.wrapOutboundOut(b1)).whenSuccess { _ in
+            let context = loopBoundContext.value
             // We should still be writable.
             XCTAssertTrue(context.channel.isWritable)
             XCTAssertEqual(self.isNotWritableCount, 0)

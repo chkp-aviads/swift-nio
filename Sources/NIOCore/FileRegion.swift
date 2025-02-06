@@ -2,7 +2,7 @@
 //
 // This source file is part of the SwiftNIO open source project
 //
-// Copyright (c) 2017-2018 Apple Inc. and the SwiftNIO project authors
+// Copyright (c) 2017-2024 Apple Inc. and the SwiftNIO project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -29,6 +29,10 @@ import WASILibc
 
 /// A `FileRegion` represent a readable portion usually created to be sent over the network.
 ///
+/// - warning: The `FileRegion` API is deprecated, do not use going forward. It's not marked as `deprecated` yet such
+///            that users don't get the deprecation warnings affecting their APIs everywhere. For file I/O, please use
+///            the `NIOFileSystem` API.
+///
 /// Usually a `FileRegion` will allow the underlying transport to use `sendfile` to transfer its content and so allows transferring
 /// the file content without copying it into user-space at all. If the actual transport implementation really can make use of sendfile
 /// or if it will need to copy the content to user-space first and use `write` / `writev` is an implementation detail. That said
@@ -37,9 +41,9 @@ import WASILibc
 /// One important note, depending your `ChannelPipeline` setup it may not be possible to use a `FileRegion` as a `ChannelHandler` may
 /// need access to the bytes (in a `ByteBuffer`) to transform these.
 ///
-/// - note: It is important to manually manage the lifetime of the `NIOFileHandle` used to create a `FileRegion`.
-/// - warning: `FileRegion` objects are not thread-safe and are mutable. They also cannot be fully thread-safe as they refer to a global underlying file descriptor.
-public struct FileRegion {
+/// - Note: It is important to manually manage the lifetime of the ``NIOFileHandle`` used to create a ``FileRegion``.
+/// - Note: As of SwiftNIO 2.77.0, `FileRegion` objects are are thread-safe and the underlying ``NIOFileHandle`` does enforce singular access.
+public struct FileRegion: Sendable {
 
     /// The `NIOFileHandle` that is used by this `FileRegion`.
     public let fileHandle: NIOFileHandle
@@ -64,10 +68,10 @@ public struct FileRegion {
 
     /// Create a new `FileRegion` from an open `NIOFileHandle`.
     ///
-    /// - parameters:
-    ///     - fileHandle: the `NIOFileHandle` to use.
-    ///     - readerIndex: the index (offset) on which the reading will start.
-    ///     - endIndex: the index which represent the end of the readable portion.
+    /// - Parameters:
+    ///   - fileHandle: the `NIOFileHandle` to use.
+    ///   - readerIndex: the index (offset) on which the reading will start.
+    ///   - endIndex: the index which represent the end of the readable portion.
     public init(fileHandle: NIOFileHandle, readerIndex: Int, endIndex: Int) {
         precondition(readerIndex <= endIndex, "readerIndex(\(readerIndex) must be <= endIndex(\(endIndex).")
 
@@ -89,14 +93,11 @@ public struct FileRegion {
     }
 }
 
-@available(*, unavailable)
-extension FileRegion: Sendable {}
-
 extension FileRegion {
     /// Create a new `FileRegion` forming a complete file.
     ///
-    /// - parameters:
-    ///     - fileHandle: An open `NIOFileHandle` to the file.
+    /// - Parameters:
+    ///   - fileHandle: An open `NIOFileHandle` to the file.
     public init(fileHandle: NIOFileHandle) throws {
         let eof = try fileHandle.withUnsafeFileDescriptor { (fd: CInt) throws -> off_t in
             let eof = try SystemCalls.lseek(descriptor: fd, offset: 0, whence: SEEK_END)

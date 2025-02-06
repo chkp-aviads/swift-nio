@@ -223,7 +223,7 @@ private struct SocketChannelLifecycleManager {
 /// For this reason, `BaseSocketChannel` exists to provide a common core implementation of
 /// the `SelectableChannel` protocol. It uses a number of private functions to provide hooks
 /// for subclasses to implement the specific logic to handle their writes and reads.
-class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, ChannelCore {
+class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, ChannelCore, @unchecked Sendable {
     typealias SelectableType = SocketType.SelectableType
 
     struct AddressCache {
@@ -387,7 +387,7 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
 
     /// Read data from the underlying socket and dispatch it to the `ChannelPipeline`
     ///
-    /// - returns: `true` if any data was read, `false` otherwise.
+    /// - Returns: `true` if any data was read, `false` otherwise.
     @discardableResult func readFromSocket() throws -> ReadResult {
         fatalError("this must be overridden by sub class")
     }
@@ -426,18 +426,18 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
 
     /// Begin connection of the underlying socket.
     ///
-    /// - parameters:
-    ///     - to: The `SocketAddress` to connect to.
-    /// - returns: `true` if the socket connected synchronously, `false` otherwise.
+    /// - Parameters:
+    ///   - to: The `SocketAddress` to connect to.
+    /// - Returns: `true` if the socket connected synchronously, `false` otherwise.
     func connectSocket(to address: SocketAddress) throws -> Bool {
         fatalError("this must be overridden by sub class")
     }
 
     /// Begin connection of the underlying socket.
     ///
-    /// - parameters:
-    ///     - to: The `VsockAddress` to connect to.
-    /// - returns: `true` if the socket connected synchronously, `false` otherwise.
+    /// - Parameters:
+    ///   - to: The `VsockAddress` to connect to.
+    /// - Returns: `true` if the socket connected synchronously, `false` otherwise.
     func connectSocket(to address: VsockAddress) throws -> Bool {
         fatalError("this must be overridden by sub class")
     }
@@ -449,9 +449,9 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
 
     /// Begin connection of the underlying socket.
     ///
-    /// - parameters:
-    ///     - to: The target to connect to.
-    /// - returns: `true` if the socket connected synchronously, `false` otherwise.
+    /// - Parameters:
+    ///   - to: The target to connect to.
+    /// - Returns: `true` if the socket connected synchronously, `false` otherwise.
     final func connectSocket(to target: ConnectTarget) throws -> Bool {
         switch target {
         case .socketAddress(let address):
@@ -542,7 +542,7 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
     /// This method can be called re-entrantly but it will return immediately because the first call is responsible
     /// for sending all flushed writes, even the ones that are accumulated whilst `flushNow()` is running.
     ///
-    /// - returns: If this socket should be registered for write notifications. Ie. `IONotificationState.register` if
+    /// - Returns: If this socket should be registered for write notifications. Ie. `IONotificationState.register` if
     ///            _not_ all data could be written, so notifications are necessary; and `IONotificationState.unregister`
     ///             if everything was written and we don't need to be notified about writability at the moment.
     func flushNow() -> IONotificationState {
@@ -561,42 +561,48 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
         }
 
         var newWriteRegistrationState: IONotificationState = .unregister
-        do {
-            while newWriteRegistrationState == .unregister && self.hasFlushedPendingWrites() && self.isOpen {
+        while newWriteRegistrationState == .unregister && self.hasFlushedPendingWrites() && self.isOpen {
+            let writeResult: OverallWriteResult
+            do {
                 assert(self.lifecycleManager.isActive)
-                let writeResult = try self.writeToSocket()
-                switch writeResult.writeResult {
-                case .couldNotWriteEverything:
-                    newWriteRegistrationState = .register
-                case .writtenCompletely:
-                    newWriteRegistrationState = .unregister
-                }
-
+                writeResult = try self.writeToSocket()
                 if writeResult.writabilityChange {
                     // We went from not writable to writable.
                     self.pipeline.syncOperations.fireChannelWritabilityChanged()
                 }
-            }
-        } catch let err {
-            // If there is a write error we should try drain the inbound before closing the socket as there may be some data pending.
-            // We ignore any error that is thrown as we will use the original err to close the channel and notify the user.
-            if self.readIfNeeded0() {
-                assert(self.lifecycleManager.isActive)
+            } catch let err {
+                // If there is a write error we should try drain the inbound before closing the socket as there may be some data pending.
+                // We ignore any error that is thrown as we will use the original err to close the channel and notify the user.
+                if self.readIfNeeded0() {
+                    assert(self.lifecycleManager.isActive)
 
-                // We need to continue reading until there is nothing more to be read from the socket as we will not have another chance to drain it.
-                var readAtLeastOnce = false
-                while let read = try? self.readFromSocket(), read == .some {
-                    readAtLeastOnce = true
+                    // We need to continue reading until there is nothing more to be read from the socket as we will not have another chance to drain it.
+                    var readAtLeastOnce = false
+                    while let read = try? self.readFromSocket(), read == .some {
+                        readAtLeastOnce = true
+                    }
+                    if readAtLeastOnce && self.lifecycleManager.isActive {
+                        self.pipeline.fireChannelReadComplete()
+                    }
                 }
-                if readAtLeastOnce && self.lifecycleManager.isActive {
-                    self.pipeline.fireChannelReadComplete()
-                }
+
+                self.close0(error: err, mode: .all, promise: nil)
+
+                // we handled all writes
+                return .unregister
             }
 
-            self.close0(error: err, mode: .all, promise: nil)
+            switch writeResult.writeResult {
+            case .couldNotWriteEverything:
+                newWriteRegistrationState = .register
+            case .writtenCompletely:
+                newWriteRegistrationState = .unregister
+            }
 
-            // we handled all writes
-            return .unregister
+            if !self.isOpen || !self.hasFlushedPendingWrites() {
+                // No further writes, unregister. We won't re-enter the loop as both of these would have to be true.
+                newWriteRegistrationState = .unregister
+            }
         }
 
         assert(
@@ -690,7 +696,7 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
 
     /// Triggers a `ChannelPipeline.read()` if `autoRead` is enabled.`
     ///
-    /// - returns: `true` if `readPending` is `true`, `false` otherwise.
+    /// - Returns: `true` if `readPending` is `true`, `false` otherwise.
     @discardableResult func readIfNeeded0() -> Bool {
         self.eventLoop.assertInEventLoop()
         if !self.lifecycleManager.isActive {
@@ -837,7 +843,7 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
     /// So unless either the deregistration or the close itself fails, `promise` will be succeeded regardless of
     /// `error`. `error` is used to fail outstanding writes (if any) and the `connectPromise` if set.
     ///
-    /// - parameters:
+    /// - Parameters:
     ///    - error: The error to fail the outstanding (if any) writes/connect with.
     ///    - mode: The close mode, must be `.all` for `BaseSocketChannel`
     ///    - promise: The promise that gets notified about the result of the deregistration/close operations.
@@ -1085,7 +1091,8 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
                 let result: Int32 = try self.socket.getOption(level: .socket, name: .so_error)
                 if result != 0 {
                     // we have a socket error, let's forward
-                    // this path will be executed on Linux (EPOLLERR) & Darwin (ev.fflags != 0)
+                    // this path will be executed on Linux (EPOLLERR) & Darwin (ev.fflags != 0) for
+                    // stream sockets, and most (but not all) errors on datagram sockets
                     error = IOError(errnoCode: result, reason: "connection reset (error set)")
                 } else {
                     // we don't have a socket error, this must be connection reset without an error then
@@ -1196,11 +1203,19 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
 
     /// Returns `true` if the `Channel` should be closed as result of the given `Error` which happened during `readFromSocket`.
     ///
-    /// - parameters:
-    ///     - err: The `Error` which was thrown by `readFromSocket`.
-    /// - returns: `true` if the `Channel` should be closed, `false` otherwise.
+    /// - Parameters:
+    ///   - err: The `Error` which was thrown by `readFromSocket`.
+    /// - Returns: `true` if the `Channel` should be closed, `false` otherwise.
     func shouldCloseOnReadError(_ err: Error) -> Bool {
         true
+    }
+
+    /// Handles an error reported by the selector.
+    ///
+    /// Default behaviour is to treat this as if it were a reset.
+    func error() -> ErrorResult {
+        self.reset()
+        return .fatal
     }
 
     internal final func updateCachedAddressesFromSocket(updateLocal: Bool = true, updateRemote: Bool = true) {
@@ -1325,7 +1340,7 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
         // The initial set of interested events must not contain `.readEOF` because when connect doesn't return
         // synchronously, kevent might send us a `readEOF` because the `writable` event that marks the connect as completed.
         // See SocketChannelTest.testServerClosesTheConnectionImmediately for a regression test.
-        try self.safeRegister(interested: [.reset])
+        try self.safeRegister(interested: [.reset, .error])
         self.lifecycleManager.finishRegistration()(nil, self.pipeline)
     }
 
@@ -1404,7 +1419,7 @@ extension BaseSocketChannel {
 }
 
 /// Execute the given function and synchronously complete the given `EventLoopPromise` (if not `nil`).
-func executeAndComplete<Value>(_ promise: EventLoopPromise<Value>?, _ body: () throws -> Value) {
+func executeAndComplete<Value: Sendable>(_ promise: EventLoopPromise<Value>?, _ body: () throws -> Value) {
     do {
         let result = try body()
         promise?.succeed(result)
