@@ -94,7 +94,7 @@ public enum SocketAddress: CustomStringConvertible, Sendable {
         /// The host this address is for, if known.
         public var host: String { _storage.value.host }
 
-        fileprivate init(address: sockaddr_in, host: String) {
+        public init(address: sockaddr_in, host: String) {
             self._storage = Box((address: address, host: host))
         }
     }
@@ -109,7 +109,7 @@ public enum SocketAddress: CustomStringConvertible, Sendable {
         /// The host this address is for, if known.
         public var host: String { _storage.value.host }
 
-        fileprivate init(address: sockaddr_in6, host: String) {
+        public init(address: sockaddr_in6, host: String) {
             self._storage = Box((address: address, host: host))
         }
     }
