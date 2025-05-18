@@ -1,4 +1,4 @@
-// swift-tools-version:5.9
+// swift-tools-version:5.10
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the SwiftNIO open source project
@@ -446,6 +446,7 @@ let package = Package(
                 "NIOCore",
                 "NIOEmbedded",
                 "NIOFoundationCompat",
+                "NIOTestUtils",
                 swiftAtomics,
             ],
             swiftSettings: strictConcurrencySettings
