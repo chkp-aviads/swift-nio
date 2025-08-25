@@ -60,10 +60,30 @@ private func sysPthread_create(
     )
     #else
     var handleLinux = pthread_t()
+    #if os(Android)
+    // NDK 27 signature:
+    // int pthread_create(pthread_t* _Nonnull __pthread_ptr, pthread_attr_t const* _Nullable __attr, void* _Nonnull (* _Nonnull __start_routine)(void* _Nonnull), void* _Nullable);
+    func coerceThreadDestructor(
+        _ destructor: @escaping ThreadDestructor
+    ) -> (@convention(c) (UnsafeMutableRawPointer) -> UnsafeMutableRawPointer) {
+        destructor
+    }
+
+    // NDK 28 signature:
+    // int pthread_create(pthread_t* _Nonnull __pthread_ptr, pthread_attr_t const* _Nullable __attr, void* _Nullable (* _Nonnull __start_routine)(void* _Nullable), void* _Nullable);
+    func coerceThreadDestructor(
+        _ destructor: @escaping ThreadDestructor
+    ) -> (@convention(c) (UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?) {
+        unsafeBitCast(destructor, to: (@convention(c) (UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?).self)
+    }
+    #else
+    // Linux doesn't change the signature
+    func coerceThreadDestructor(_ destructor: ThreadDestructor) -> ThreadDestructor { destructor }
+    #endif
     let result = pthread_create(
         &handleLinux,
         nil,
-        destructor,
+        coerceThreadDestructor(destructor),
         args
     )
     #endif
@@ -120,8 +140,7 @@ enum ThreadOpsPosix: ThreadOps {
 
     static func run(
         handle: inout ThreadOpsSystem.ThreadHandle?,
-        args: Box<NIOThread.ThreadBoxValue>,
-        detachThread: Bool
+        args: Box<NIOThread.ThreadBoxValue>
     ) {
         let argv0 = Unmanaged.passRetained(args).toOpaque()
         let res = handle.withHandlePointer { handlePtr in
@@ -162,11 +181,6 @@ enum ThreadOpsPosix: ThreadOps {
             )
         }
         precondition(res == 0, "Unable to create thread: \(res)")
-
-        if detachThread {
-            let detachError = pthread_detach(handle!.handle)
-            precondition(detachError == 0, "pthread_detach failed with error \(detachError)")
-        }
     }
 
     static func isCurrentThread(_ thread: ThreadOpsSystem.ThreadHandle) -> Bool {

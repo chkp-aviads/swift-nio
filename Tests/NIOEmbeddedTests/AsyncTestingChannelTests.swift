@@ -445,7 +445,6 @@ class AsyncTestingChannelTests: XCTestCase {
     }
 
     func testSetLocalAddressAfterSuccessfulBind() throws {
-
         let channel = NIOAsyncTestingChannel()
         let bindPromise = channel.eventLoop.makePromise(of: Void.self)
         let socketAddress = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
@@ -454,11 +453,19 @@ class AsyncTestingChannelTests: XCTestCase {
             XCTAssertEqual(channel.localAddress, socketAddress)
         }
         try bindPromise.futureResult.wait()
+    }
 
+    func testSetLocalAddressAfterSuccessfulBindWithoutPromise() throws {
+        let channel = NIOAsyncTestingChannel()
+        let socketAddress = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
+        // Call bind on-loop so we know when to expect the result
+        try channel.testingEventLoop.submit {
+            channel.bind(to: socketAddress, promise: nil)
+        }.wait()
+        XCTAssertEqual(channel.localAddress, socketAddress)
     }
 
     func testSetRemoteAddressAfterSuccessfulConnect() throws {
-
         let channel = NIOAsyncTestingChannel()
         let connectPromise = channel.eventLoop.makePromise(of: Void.self)
         let socketAddress = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
@@ -467,7 +474,16 @@ class AsyncTestingChannelTests: XCTestCase {
             XCTAssertEqual(channel.remoteAddress, socketAddress)
         }
         try connectPromise.futureResult.wait()
+    }
 
+    func testSetRemoteAddressAfterSuccessfulConnectWithoutPromise() throws {
+        let channel = NIOAsyncTestingChannel()
+        let socketAddress = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
+        // Call connect on-loop so we know when to expect the result
+        try channel.testingEventLoop.submit {
+            channel.connect(to: socketAddress, promise: nil)
+        }.wait()
+        XCTAssertEqual(channel.remoteAddress, socketAddress)
     }
 
     func testUnprocessedOutboundUserEventFailsOnEmbeddedChannel() throws {
@@ -664,6 +680,19 @@ class AsyncTestingChannelTests: XCTestCase {
 
         try await XCTAsyncAssertEqual(buf, try await channel.waitForOutboundWrite(as: ByteBuffer.self))
         try await XCTAsyncAssertTrue(try await channel.finish().isClean)
+    }
+
+    func testGetSetOption() async throws {
+        let channel = NIOAsyncTestingChannel()
+        let option = ChannelOptions.socket(IPPROTO_IP, IP_TTL)
+        let _ = try await channel.setOption(option, value: 1).get()
+
+        let optionValue1 = try await channel.getOption(option).get()
+        XCTAssertEqual(1, optionValue1)
+
+        let _ = try await channel.setOption(option, value: 2).get()
+        let optionValue2 = try await channel.getOption(option).get()
+        XCTAssertEqual(2, optionValue2)
     }
 }
 

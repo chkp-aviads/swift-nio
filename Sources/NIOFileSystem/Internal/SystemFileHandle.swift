@@ -33,7 +33,7 @@ import CNIOLinux
 /// descriptor.
 @_spi(Testing)
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-public final class SystemFileHandle {
+public final class SystemFileHandle: Sendable {
     /// The executor on which to execute system calls.
     internal var threadPool: NIOThreadPool { self.sendableView.threadPool }
 
@@ -371,7 +371,7 @@ extension SystemFileHandle: FileHandleProtocol {
     }
 
     @_spi(Testing)
-    public enum UpdatePermissionsOperation { case set, add, remove }
+    public enum UpdatePermissionsOperation: Sendable { case set, add, remove }
 }
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)

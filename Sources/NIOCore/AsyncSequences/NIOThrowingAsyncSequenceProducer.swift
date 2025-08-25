@@ -42,13 +42,13 @@ public struct NIOThrowingAsyncSequenceProducer<
     /// to yield new elements to the sequence.
     /// 2. The ``sequence`` which is the actual `AsyncSequence` and
     /// should be passed to the consumer.
-    public struct NewSequence {
+    public struct NewSequence: Sendable {
         /// The source of the ``NIOThrowingAsyncSequenceProducer`` used to yield and finish.
         public let source: Source
         /// The actual sequence which should be passed to the consumer.
         public let sequence: NIOThrowingAsyncSequenceProducer
 
-        @usableFromInline
+        @inlinable
         internal init(
             source: Source,
             sequence: NIOThrowingAsyncSequenceProducer
@@ -218,6 +218,7 @@ public struct NIOThrowingAsyncSequenceProducer<
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 extension NIOThrowingAsyncSequenceProducer: AsyncSequence {
+    @inlinable
     public func makeAsyncIterator() -> AsyncIterator {
         AsyncIterator(storage: self._internalClass._storage)
     }
@@ -234,7 +235,8 @@ extension NIOThrowingAsyncSequenceProducer {
             @usableFromInline
             internal let _storage: Storage
 
-            fileprivate init(storage: Storage) {
+            @inlinable
+            init(storage: Storage) {
                 self._storage = storage
                 self._storage.iteratorInitialized()
             }
@@ -253,7 +255,8 @@ extension NIOThrowingAsyncSequenceProducer {
         @usableFromInline
         internal let _internalClass: InternalClass
 
-        fileprivate init(storage: Storage) {
+        @inlinable
+        init(storage: Storage) {
             self._internalClass = InternalClass(storage: storage)
         }
 
@@ -309,13 +312,13 @@ extension NIOThrowingAsyncSequenceProducer {
             self._internalClass._storage
         }
 
-        @usableFromInline
+        @inlinable
         internal init(storage: Storage, finishOnDeinit: Bool) {
             self._internalClass = .init(storage: storage, finishOnDeinit: finishOnDeinit)
         }
 
         /// The result of a call to ``NIOThrowingAsyncSequenceProducer/Source/yield(_:)``.
-        public enum YieldResult: Hashable {
+        public enum YieldResult: Hashable, Sendable {
             /// Indicates that the caller should produce more elements.
             case produceMore
             /// Indicates that the caller should stop producing elements.
@@ -422,7 +425,7 @@ extension NIOThrowingAsyncSequenceProducer {
         @usableFromInline
         internal let _state: NIOLockedValueBox<State>
 
-        @usableFromInline
+        @inlinable
         internal func _setDidSuspend(_ didSuspend: (@Sendable () -> Void)?) {
             self._state.withLockedValue {
                 $0.didSuspend = didSuspend
@@ -434,7 +437,7 @@ extension NIOThrowingAsyncSequenceProducer {
             self._state.withLockedValue { $0.stateMachine.isFinished }
         }
 
-        @usableFromInline
+        @inlinable
         internal init(
             backPressureStrategy: Strategy,
             delegate: Delegate
@@ -779,7 +782,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `sequenceDeinitialized()`.
         @usableFromInline
-        enum SequenceDeinitializedAction {
+        enum SequenceDeinitializedAction: Sendable {
             /// Indicates that ``NIOAsyncSequenceProducerDelegate/didTerminate()`` should be called.
             case callDidTerminate
             /// Indicates that nothing should be done.
@@ -869,7 +872,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `iteratorDeinitialized()`.
         @usableFromInline
-        enum IteratorDeinitializedAction {
+        enum IteratorDeinitializedAction: Sendable {
             /// Indicates that ``NIOAsyncSequenceProducerDelegate/didTerminate()`` should be called.
             case callDidTerminate
             /// Indicates that nothing should be done.
@@ -908,7 +911,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `yield()`.
         @usableFromInline
-        enum YieldAction {
+        enum YieldAction: Sendable {
             /// Indicates that ``NIOThrowingAsyncSequenceProducer/Source/YieldResult/produceMore`` should be returned.
             case returnProduceMore
             /// Indicates that ``NIOThrowingAsyncSequenceProducer/Source/YieldResult/stopProducing`` should be returned.
@@ -928,7 +931,7 @@ extension NIOThrowingAsyncSequenceProducer {
             /// Indicates that the yielded elements have been dropped.
             case returnDropped
 
-            @usableFromInline
+            @inlinable
             init(
                 shouldProduceMore: Bool,
                 continuationAndElement: (CheckedContinuation<Element?, Error>, Element)? = nil
@@ -1037,7 +1040,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `finish()`.
         @usableFromInline
-        enum FinishAction {
+        enum FinishAction: Sendable {
             /// Indicates that the continuation should be resumed with `nil` and
             /// that ``NIOAsyncSequenceProducerDelegate/didTerminate()`` should be called.
             case resumeContinuationWithFailureAndCallDidTerminate(CheckedContinuation<Element?, Error>, Failure?)
@@ -1089,7 +1092,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `cancelled()`.
         @usableFromInline
-        enum CancelledAction {
+        enum CancelledAction: Sendable {
             /// Indicates that ``NIOAsyncSequenceProducerDelegate/didTerminate()`` should be called.
             case callDidTerminate
             /// Indicates that the continuation should be resumed with a `CancellationError` and
@@ -1151,7 +1154,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `next()`.
         @usableFromInline
-        enum NextAction {
+        enum NextAction: Sendable {
             /// Indicates that the element should be returned to the caller.
             case returnElement(Element)
             /// Indicates that the element should be returned to the caller and
@@ -1265,7 +1268,7 @@ extension NIOThrowingAsyncSequenceProducer {
 
         /// Actions returned by `next(for:)`.
         @usableFromInline
-        enum NextForContinuationAction {
+        enum NextForContinuationAction: Sendable {
             /// Indicates that ``NIOAsyncSequenceProducerDelegate/produceMore()`` should be called.
             case callProduceMore
             /// Indicates that nothing should be done.
