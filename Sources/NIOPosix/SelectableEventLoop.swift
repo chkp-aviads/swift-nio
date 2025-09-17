@@ -92,7 +92,12 @@ public protocol NIOEventLoopMetricsDelegate: Sendable {
 internal final class SelectableEventLoop: EventLoop, @unchecked Sendable {
 
     static let strictModeEnabled: Bool = {
-        switch getenv("SWIFTNIO_STRICT").map({ String.init(cString: $0).lowercased() }) {
+        #if os(Windows)
+        let env = Windows.getenv("SWIFTNIO_STRICT")
+        #else
+        let env = getenv("SWIFTNIO_STRICT").flatMap { String(cString: $0) }
+        #endif
+        switch env?.lowercased() {
         case "true", "y", "yes", "on", "1":
             return true
         default:
@@ -1055,28 +1060,31 @@ extension SelectableEventLoop: CustomStringConvertible, CustomDebugStringConvert
 
     @usableFromInline
     var debugDescription: String {
-        self._tasksLock.withLock {
-            if self.inEventLoop {
-                return """
-                    SelectableEventLoop { \
-                    selector = \(self._selector), \
-                    scheduledTasks = \(self._scheduledTasks.description), \
-                    thread = \(self.thread), \
-                    state = \(self.internalState) \
-                    }
-                    """
-            } else {
-                return self.externalStateLock.withLock {
-                    """
-                    SelectableEventLoop { \
-                    selector = \(self._selector), \
-                    scheduledTasks = \(self._scheduledTasks.description), \
-                    thread = \(self.thread), \
-                    state = \(self.externalState) \
-                    }
-                    """
+        let scheduledTasks = self._tasksLock.withLock {
+            self._scheduledTasks.description
+        }
+
+        if self.inEventLoop {
+            return """
+                SelectableEventLoop { \
+                selector = \(self._selector), \
+                scheduledTasks = \(scheduledTasks), \
+                thread = \(self.thread), \
+                state = \(self.internalState) \
                 }
+                """
+        } else {
+            let externalState = self.externalStateLock.withLock {
+                self.externalState
             }
+            return """
+                SelectableEventLoop { \
+                selector = \(self._selector), \
+                scheduledTasks = \(scheduledTasks), \
+                thread = \(self.thread), \
+                state = \(externalState) \
+                }
+                """
         }
     }
 }

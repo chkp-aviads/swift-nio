@@ -2378,6 +2378,9 @@ public final class NIOPipeBootstrap {
     ///   - inputOutput: The _Unix file descriptor_ for the input & output.
     /// - Returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
     public func takingOwnershipOfDescriptor(inputOutput: CInt) -> EventLoopFuture<Channel> {
+        #if os(Windows)
+        fatalError(missingPipeSupportWindows)
+        #else
         let inputFD = inputOutput
         let outputFD = try! Posix.dup(descriptor: inputOutput)
 
@@ -2385,6 +2388,7 @@ public final class NIOPipeBootstrap {
             try! Posix.close(descriptor: outputFD)
             throw error
         }
+        #endif
     }
 
     /// Create the `PipeChannel` with the provided input and output file descriptors.
@@ -2485,6 +2489,9 @@ extension NIOPipeBootstrap {
         inputOutput: CInt,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<Output>
     ) async throws -> Output {
+        #if os(Windows)
+        fatalError(missingPipeSupportWindows)
+        #else
         let inputFD = inputOutput
         let outputFD = try! Posix.dup(descriptor: inputOutput)
 
@@ -2498,6 +2505,7 @@ extension NIOPipeBootstrap {
             try! Posix.close(descriptor: outputFD)
             throw error
         }
+        #endif
     }
 
     /// Create the `PipeChannel` with the provided input and output file descriptors.
@@ -2599,6 +2607,9 @@ extension NIOPipeBootstrap {
         output: CInt?,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>
     ) -> EventLoopFuture<ChannelInitializerResult> {
+        #if os(Windows)
+        fatalError(missingPipeSupportWindows)
+        #else
         precondition(
             input ?? 0 >= 0 && output ?? 0 >= 0 && input != output,
             "illegal file descriptor pair. The file descriptors \(String(describing: input)), \(String(describing: output)) "
@@ -2681,6 +2692,7 @@ extension NIOPipeBootstrap {
                 setupChannel()
             }
         }
+        #endif
     }
 }
 

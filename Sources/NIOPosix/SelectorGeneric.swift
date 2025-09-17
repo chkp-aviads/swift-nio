@@ -17,6 +17,8 @@ import NIOCore
 
 #if os(Linux)
 import CNIOLinux
+#elseif os(Windows)
+import WinSDK
 #endif
 
 @usableFromInline
@@ -123,21 +125,21 @@ protocol _SelectorBackendProtocol {
     func initialiseState0() throws
     func deinitAssertions0()  // allows actual implementation to run some assertions as part of the class deinit
     func register0(
-        selectableFD: CInt,
-        fileDescriptor: CInt,
+        selectableFD: NIOBSDSocket.Handle,
+        fileDescriptor: NIOBSDSocket.Handle,
         interested: SelectorEventSet,
         registrationID: SelectorRegistrationID
     ) throws
     func reregister0(
-        selectableFD: CInt,
-        fileDescriptor: CInt,
+        selectableFD: NIOBSDSocket.Handle,
+        fileDescriptor: NIOBSDSocket.Handle,
         oldInterested: SelectorEventSet,
         newInterested: SelectorEventSet,
         registrationID: SelectorRegistrationID
     ) throws
     func deregister0(
-        selectableFD: CInt,
-        fileDescriptor: CInt,
+        selectableFD: NIOBSDSocket.Handle,
+        fileDescriptor: NIOBSDSocket.Handle,
         oldInterested: SelectorEventSet,
         registrationID: SelectorRegistrationID
     ) throws
@@ -210,6 +212,11 @@ internal class Selector<R: Registration> {
     @usableFromInline
     var deferredReregistrationsPending = false  // true if flush needed when reentring whenReady()
     #endif
+    #elseif os(Windows)
+    @usableFromInline
+    typealias EventType = WinSDK.pollfd
+    @usableFromInline
+    var pollFDs = [WinSDK.pollfd]()
     #else
     #error("Unsupported platform, no suitable selector backend (we need kqueue or epoll support)")
     #endif
