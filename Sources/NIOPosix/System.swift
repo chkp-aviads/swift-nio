@@ -32,6 +32,11 @@ internal typealias MMsgHdr = CNIODarwin_mmsghdr
 import CNIOLinux
 internal typealias MMsgHdr = CNIOLinux_mmsghdr
 internal typealias in6_pktinfo = CNIOLinux_in6_pktinfo
+#elseif os(OpenBSD)
+@_exported @preconcurrency import Glibc
+import CNIOOpenBSD
+internal typealias MMsgHdr = CNIOOpenBSD_mmsghdr
+let INADDR_ANY = UInt32(0)
 #elseif os(Windows)
 @_exported import ucrt
 
@@ -44,15 +49,9 @@ internal typealias MMsgHdr = CNIOWindows_mmsghdr
 
 #if os(Android)
 let INADDR_ANY = UInt32(0)  // #define INADDR_ANY ((unsigned long int) 0x00000000)
-#if compiler(>=6.0)
 let IFF_BROADCAST: CUnsignedInt = numericCast(Android.IFF_BROADCAST.rawValue)
 let IFF_POINTOPOINT: CUnsignedInt = numericCast(Android.IFF_POINTOPOINT.rawValue)
 let IFF_MULTICAST: CUnsignedInt = numericCast(Android.IFF_MULTICAST.rawValue)
-#else
-let IFF_BROADCAST: CUnsignedInt = numericCast(SwiftGlibc.IFF_BROADCAST.rawValue)
-let IFF_POINTOPOINT: CUnsignedInt = numericCast(SwiftGlibc.IFF_POINTOPOINT.rawValue)
-let IFF_MULTICAST: CUnsignedInt = numericCast(SwiftGlibc.IFF_MULTICAST.rawValue)
-#endif
 internal typealias in_port_t = UInt16
 extension ipv6_mreq {  // http://lkml.iu.edu/hypermail/linux/kernel/0106.1/0080.html
     init(ipv6mr_multiaddr: in6_addr, ipv6mr_interface: UInt32) {
@@ -63,21 +62,12 @@ extension ipv6_mreq {  // http://lkml.iu.edu/hypermail/linux/kernel/0106.1/0080.
     }
 }
 #if arch(arm)
-#if compiler(>=6.0)
 let S_IFSOCK = UInt32(Android.S_IFSOCK)
 let S_IFMT = UInt32(Android.S_IFMT)
 let S_IFREG = UInt32(Android.S_IFREG)
 let S_IFDIR = UInt32(Android.S_IFDIR)
 let S_IFLNK = UInt32(Android.S_IFLNK)
 let S_IFBLK = UInt32(Android.S_IFBLK)
-#else
-let S_IFSOCK = UInt32(SwiftGlibc.S_IFSOCK)
-let S_IFMT = UInt32(SwiftGlibc.S_IFMT)
-let S_IFREG = UInt32(SwiftGlibc.S_IFREG)
-let S_IFDIR = UInt32(SwiftGlibc.S_IFDIR)
-let S_IFLNK = UInt32(SwiftGlibc.S_IFLNK)
-let S_IFBLK = UInt32(SwiftGlibc.S_IFBLK)
-#endif
 #endif
 #endif
 
@@ -166,7 +156,7 @@ private let sysSocketpair: @convention(c) (CInt, CInt, CInt, UnsafeMutablePointe
 private let sysSocketpair: @convention(c) (CInt, CInt, CInt, UnsafeMutablePointer<CInt>?) -> CInt = socketpair
 #endif
 
-#if os(Linux) || os(Android) || canImport(Darwin)
+#if os(Linux) || os(Android) || canImport(Darwin) || os(OpenBSD)
 private let sysFstat = fstat
 private let sysStat = stat
 private let sysLstat = lstat
@@ -183,6 +173,10 @@ private let sysRemove = remove
 #if os(Linux) || os(Android)
 private let sysSendMmsg = CNIOLinux_sendmmsg
 private let sysRecvMmsg = CNIOLinux_recvmmsg
+#elseif os(OpenBSD)
+private let sysKevent = kevent
+private let sysSendMmsg = CNIOOpenBSD_sendmmsg
+private let sysRecvMmsg = CNIOOpenBSD_recvmmsg
 #elseif canImport(Darwin)
 private let sysKevent = kevent
 private let sysMkpath = mkpath_np
@@ -362,7 +356,7 @@ internal func syscall<T>(
         }
     }
 }
-#elseif os(Linux) || os(Android)
+#elseif os(Linux) || os(Android) || os(OpenBSD)
 @inline(__always)
 @inlinable
 @discardableResult
@@ -465,7 +459,7 @@ internal enum Posix: Sendable {
     static let SHUT_WR: CInt = CInt(Darwin.SHUT_WR)
     @usableFromInline
     static let SHUT_RDWR: CInt = CInt(Darwin.SHUT_RDWR)
-    #elseif os(Linux) || os(FreeBSD) || os(Android)
+    #elseif os(Linux) || os(FreeBSD) || os(Android) || os(OpenBSD)
     #if canImport(Glibc)
     @usableFromInline
     static let UIO_MAXIOV: Int = Int(Glibc.UIO_MAXIOV)
@@ -529,6 +523,12 @@ internal enum Posix: Sendable {
     static let IPTOS_ECN_ECT0: CInt = CInt(CNIOLinux.IPTOS_ECN_ECT0)
     static let IPTOS_ECN_ECT1: CInt = CInt(CNIOLinux.IPTOS_ECN_ECT1)
     static let IPTOS_ECN_CE: CInt = CInt(CNIOLinux.IPTOS_ECN_CE)
+    #elseif os(OpenBSD)
+    static let IPTOS_ECN_NOTECT: CInt = CInt(CNIOOpenBSD.IPTOS_ECN_NOTECT)
+    static let IPTOS_ECN_MASK: CInt = CInt(CNIOOpenBSD.IPTOS_ECN_MASK)
+    static let IPTOS_ECN_ECT0: CInt = CInt(CNIOOpenBSD.IPTOS_ECN_ECT0)
+    static let IPTOS_ECN_ECT1: CInt = CInt(CNIOOpenBSD.IPTOS_ECN_ECT1)
+    static let IPTOS_ECN_CE: CInt = CInt(CNIOOpenBSD.IPTOS_ECN_CE)
     #elseif os(Windows)
     static let IPTOS_ECN_NOTECT: CInt = CInt(0x00)
     static let IPTOS_ECN_MASK: CInt = CInt(0x03)
@@ -549,12 +549,25 @@ internal enum Posix: Sendable {
 
     static let IPV6_RECVPKTINFO: CInt = CInt(CNIOLinux.IPV6_RECVPKTINFO)
     static let IPV6_PKTINFO: CInt = CInt(CNIOLinux.IPV6_PKTINFO)
+    #elseif os(OpenBSD)
+    static let IP_PKTINFO: CInt = CInt(-1)  // Not actually present.
+
+    static let IPV6_RECVPKTINFO: CInt = CInt(CNIOOpenBSD.IPV6_RECVPKTINFO)
+    static let IPV6_PKTINFO: CInt = CInt(CNIOOpenBSD.IPV6_PKTINFO)
     #elseif os(Windows)
     static let IP_RECVPKTINFO: CInt = CInt(WinSDK.IP_PKTINFO)
     static let IP_PKTINFO: CInt = CInt(WinSDK.IP_PKTINFO)
 
     static let IPV6_RECVPKTINFO: CInt = CInt(WinSDK.IPV6_PKTINFO)
     static let IPV6_PKTINFO: CInt = CInt(WinSDK.IPV6_PKTINFO)
+    #endif
+
+    #if canImport(Darwin)
+    static let SOL_UDP: CInt = CInt(IPPROTO_UDP)
+    #elseif os(Linux) || os(FreeBSD) || os(Android) || os(OpenBSD)
+    static let SOL_UDP: CInt = CInt(IPPROTO_UDP)
+    #elseif os(Windows)
+    static let SOL_UDP: CInt = CInt(IPPROTO_UDP)
     #endif
 
     #if !os(Windows)
@@ -985,7 +998,7 @@ internal enum Posix: Sendable {
             sysClosedir(dir)
         }
     }
-    #elseif os(Linux) || os(FreeBSD) || os(Android)
+    #elseif os(Linux) || os(FreeBSD) || os(Android) || os(OpenBSD)
     @inline(never)
     public static func opendir(pathname: String) throws -> OpaquePointer {
         try syscall {
@@ -1077,7 +1090,15 @@ extension Posix {
 }
 #endif
 
+#if canImport(Darwin) || os(OpenBSD)
 #if canImport(Darwin)
+internal typealias kevent_timespec = Darwin.timespec
+#elseif os(OpenBSD)
+internal typealias kevent_timespec = CNIOOpenBSD.timespec
+#else
+#error("implementation missing")
+#endif
+
 @usableFromInline
 internal enum KQueue: Sendable {
 
@@ -1086,7 +1107,13 @@ internal enum KQueue: Sendable {
     @inline(never)
     public static func kqueue() throws -> CInt {
         try syscall(blocking: false) {
+            #if canImport(Darwin)
             Darwin.kqueue()
+            #elseif os(OpenBSD)
+            CNIOOpenBSD.kqueue()
+            #else
+            #error("implementation missing")
+            #endif
         }.result
     }
 
@@ -1098,7 +1125,7 @@ internal enum KQueue: Sendable {
         nchanges: CInt,
         eventlist: UnsafeMutablePointer<kevent>?,
         nevents: CInt,
-        timeout: UnsafePointer<Darwin.timespec>?
+        timeout: UnsafePointer<kevent_timespec>?
     ) throws -> CInt {
         try syscall(blocking: false) {
             sysKevent(kq, changelist, nchanges, eventlist, nevents, timeout)

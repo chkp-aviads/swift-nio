@@ -33,14 +33,16 @@ extension FileSystem {
         from sourcePath: FilePath,
         to destinationPath: FilePath,
         maxConcurrentOperations: Int,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ entry: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ entry: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws {
         // Implemented with NIOAsyncSequenceProducer rather than AsyncStream. It is approximately
         // the same speed in the best case, but has significantly less variance.
@@ -124,6 +126,10 @@ extension FileSystem {
                     // the latter case we choose to propagate the cancellation clearly. This makes
                     // testing for it more reliable.
                     try Task.checkCancellation()
+
+                    // If any child tasks failed throw up an error.
+                    try await taskGroup.waitForAll()
+
                     return
                 }
             }

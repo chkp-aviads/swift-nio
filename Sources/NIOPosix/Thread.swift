@@ -16,6 +16,8 @@ import NIOConcurrencyHelpers
 
 #if os(Linux) || os(FreeBSD) || os(Android)
 import CNIOLinux
+#elseif os(OpenBSD)
+import CNIOOpenBSD
 #elseif os(Windows)
 import WinSDK
 #endif
@@ -44,7 +46,6 @@ protocol ThreadOps {
 /// A Thread that executes some runnable block.
 ///
 /// All methods exposed are thread-safe.
-// swift-format-ignore
 @usableFromInline
 final class NIOThread: Sendable {
     internal typealias ThreadBoxValue = (body: (NIOThread) -> Void, name: String?)

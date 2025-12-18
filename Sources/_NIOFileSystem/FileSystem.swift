@@ -233,11 +233,26 @@ public struct FileSystem: Sendable, FileSystemProtocol {
         withIntermediateDirectories createIntermediateDirectories: Bool,
         permissions: FilePermissions?
     ) async throws {
+        try await self.createDirectory(
+            at: path,
+            withIntermediateDirectories: createIntermediateDirectories,
+            permissions: permissions,
+            idempotent: true
+        )
+    }
+
+    private func createDirectory(
+        at path: FilePath,
+        withIntermediateDirectories createIntermediateDirectories: Bool,
+        permissions: FilePermissions?,
+        idempotent: Bool
+    ) async throws {
         try await self.threadPool.runIfActive {
             try self._createDirectory(
                 at: path,
                 withIntermediateDirectories: createIntermediateDirectories,
-                permissions: permissions ?? .defaultsForDirectory
+                permissions: permissions ?? .defaultsForDirectory,
+                idempotent: idempotent
             ).get()
         }
     }
@@ -314,14 +329,16 @@ public struct FileSystem: Sendable, FileSystemProtocol {
         at sourcePath: FilePath,
         to destinationPath: FilePath,
         strategy copyStrategy: CopyStrategy,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws {
         guard let info = try await self.info(forFileAt: sourcePath, infoAboutSymbolicLink: true)
         else {
@@ -807,7 +824,8 @@ extension FileSystem {
     private func _createDirectory(
         at fullPath: FilePath,
         withIntermediateDirectories createIntermediateDirectories: Bool,
-        permissions: FilePermissions
+        permissions: FilePermissions,
+        idempotent: Bool = true
     ) -> Result<Void, FileSystemError> {
         // We assume that we will be creating intermediate directories:
         // - Try creating the directory. If it fails with ENOENT (no such file or directory), then
@@ -837,6 +855,24 @@ extension FileSystem {
                 break loop
 
             case let .failure(errno):
+                if errno == .fileExists {
+                    if idempotent {
+                        switch self._info(forFileAt: path, infoAboutSymbolicLink: false) {
+                        case let .success(maybeInfo):
+                            if let info = maybeInfo, info.type == .directory {
+                                break loop
+                            } else {
+                                // A file exists at this path.
+                                return .failure(.mkdir(errno: errno, path: path, location: .here()))
+                            }
+                        case .failure:
+                            // Unable to determine what exists at this path.
+                            return .failure(.mkdir(errno: errno, path: path, location: .here()))
+                        }
+                    } else {
+                        return .failure(.mkdir(errno: errno, path: path, location: .here()))
+                    }
+                }
                 guard createIntermediateDirectories, errno == .noSuchFileOrDirectory else {
                     return .failure(.mkdir(errno: errno, path: path, location: .here()))
                 }
@@ -911,14 +947,16 @@ extension FileSystem {
     private func prepareDirectoryForRecusiveCopy(
         from sourcePath: FilePath,
         to destinationPath: FilePath,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ entry: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ entry: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws -> [DirCopyItem] {
         try await self.withDirectoryHandle(atPath: sourcePath) { dir in
             // Grab the directory info to copy permissions.
@@ -926,7 +964,8 @@ extension FileSystem {
             try await self.createDirectory(
                 at: destinationPath,
                 withIntermediateDirectories: false,
-                permissions: info.permissions
+                permissions: info.permissions,
+                idempotent: false  // Fail if the destination dir already exists.
             )
 
             #if !os(Android)
@@ -1001,14 +1040,16 @@ extension FileSystem {
     private func copyDirectorySequential(
         from sourcePath: FilePath,
         to destinationPath: FilePath,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ entry: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ entry: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws {
         // Strategy: find all needed items to copy/recurse into while the directory is open; defer
         // actual copying and recursion until after the source directory has been closed to avoid
@@ -1080,14 +1121,16 @@ extension FileSystem {
         from sourcePath: FilePath,
         to destinationPath: FilePath,
         strategy copyStrategy: CopyStrategy,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ entry: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ entry: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws {
         switch copyStrategy.wrapped {
         case .sequential:
@@ -1124,14 +1167,16 @@ extension FileSystem {
         from: DirectoryEntry,
         to: FilePath,
         yield: @Sendable ([DirCopyItem]) -> Void,
-        shouldProceedAfterError: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ error: Error
-        ) async throws -> Void,
-        shouldCopyItem: @escaping @Sendable (
-            _ source: DirectoryEntry,
-            _ destination: FilePath
-        ) async -> Bool
+        shouldProceedAfterError:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ error: Error
+            ) async throws -> Void,
+        shouldCopyItem:
+            @escaping @Sendable (
+                _ source: DirectoryEntry,
+                _ destination: FilePath
+            ) async -> Bool
     ) async throws {
         switch from.type {
         case .regular:
@@ -1155,13 +1200,19 @@ extension FileSystem {
             }
 
         case .directory:
-            let addToQueue = try await self.prepareDirectoryForRecusiveCopy(
-                from: from.path,
-                to: to,
-                shouldProceedAfterError: shouldProceedAfterError,
-                shouldCopyItem: shouldCopyItem
-            )
-            yield(addToQueue)
+            do {
+                let addToQueue = try await self.prepareDirectoryForRecusiveCopy(
+                    from: from.path,
+                    to: to,
+                    shouldProceedAfterError: shouldProceedAfterError,
+                    shouldCopyItem: shouldCopyItem
+                )
+                yield(addToQueue)
+            } catch {
+                // The caller expects an end-of-dir regardless of whether there was an error or not.
+                yield([.endOfDir])
+                try await shouldProceedAfterError(from, error)
+            }
 
         default:
             let error = FileSystemError(
