@@ -86,7 +86,8 @@ SwiftNIO            | Minimum Swift Version
 `2.60.0 ..< 2.65.0` | 5.7
 `2.65.0 ..< 2.76.0` | 5.8
 `2.76.0 ..< 2.83.0` | 5.9
-`2.83.0 ...`        | 5.10
+`2.83.0 ..< 2.87.0` | 5.10
+`2.87.0 ...       ` | 6.0
 
 ### SwiftNIO 1
 SwiftNIO 1 is considered end of life - it is strongly recommended that you move to a newer version.  The Core NIO team does not actively work on this version.  No new features will be added to this version but PRs which fix bugs or security vulnerabilities will be accepted until the end of May 2022.
@@ -101,6 +102,8 @@ SwiftNIO aims to support all of the platforms where Swift is supported. Currentl
 
 * Ubuntu 18.04+
 * macOS 10.9+, iOS 7+; (macOS 10.14+, iOS 12+, tvOS 12+ or watchOS 6+ with [swift-nio-transport-services][repo-nio-transport-services])
+
+SwiftNIO has experimental support on OpenBSD for all SwiftNIO libraries _except_ for NIOFileSystem, which is not yet supported. You can use all other SwiftNIO libraries on OpenBSD by adding them as dependencies in `Package.swift`.
 
 ### Compatibility
 

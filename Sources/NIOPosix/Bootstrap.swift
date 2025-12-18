@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 import CNIOLinux
+import CNIOOpenBSD
 import NIOCore
 
 #if os(Windows)
@@ -459,7 +460,7 @@ public final class ServerBootstrap {
         }
 
         func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-            let accepted = Self.unwrapInboundIn(data)
+            let accepted = AcceptHandler.unwrapInboundIn(data)
             let ctxEventLoop = context.eventLoop
             let childEventLoop = accepted.eventLoop
             let childChannelInit = self.childChannelInit ?? { (_: Channel) in childEventLoop.makeSucceededFuture(()) }
@@ -484,7 +485,7 @@ public final class ServerBootstrap {
                     guard context.channel.isActive else {
                         return ctxEventLoop.makeFailedFuture(ChannelError._ioOnClosedChannel)
                     }
-                    context.fireChannelRead(Self.wrapInboundOut(accepted))
+                    context.fireChannelRead(AcceptHandler.wrapInboundOut(accepted))
                     return context.eventLoop.makeSucceededFuture(())
                 }.whenFailure { error in
                     self.closeAndFire(context: context, accepted: accepted, err: error)
@@ -1407,9 +1408,10 @@ extension ClientBootstrap {
         port: Int,
         eventLoop: EventLoop,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) async throws -> PostRegistrationTransformationResult {
         let resolver =
             self.resolver
@@ -1455,9 +1457,10 @@ extension ClientBootstrap {
         eventLoop: EventLoop,
         socket: NIOBSDSocket.Handle,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) async throws -> PostRegistrationTransformationResult {
         let channel = try SocketChannel(eventLoop: eventLoop as! SelectableEventLoop, socket: socket)
 
@@ -1481,9 +1484,10 @@ extension ClientBootstrap {
         eventLoop: EventLoop,
         protocolFamily: NIOBSDSocket.ProtocolFamily,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >,
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >,
         _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<(Channel, PostRegistrationTransformationResult)> {
         let channel: SocketChannel
@@ -1514,9 +1518,10 @@ extension ClientBootstrap {
         channelOptions: ChannelOptions.Storage,
         bindTarget: SocketAddress?,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >,
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >,
         _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<(Channel, PostRegistrationTransformationResult)> {
         let channel: SocketChannel
@@ -1550,9 +1555,10 @@ extension ClientBootstrap {
         channel: SocketChannel,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         registration: @escaping @Sendable (SocketChannel) -> EventLoopFuture<Void>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) -> EventLoopFuture<PostRegistrationTransformationResult> {
         Self.initializeAndRegisterChannel(
             channel: channel,
@@ -1576,9 +1582,10 @@ extension ClientBootstrap {
         bindTarget: SocketAddress?,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         registration: @escaping @Sendable (SocketChannel) -> EventLoopFuture<Void>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) -> EventLoopFuture<PostRegistrationTransformationResult> {
         let channelInitializer = { @Sendable channel in
             bootstrapChannelInitializer(channel).hop(to: channel.eventLoop)
@@ -1821,22 +1828,29 @@ public final class DatagramBootstrap {
         }
     }
     
-    public func connect(resolver: Resolver, host: String, port: Int, connectTimeout: TimeAmount = .seconds(10)) -> EventLoopFuture<Channel> {
-        let eventLoop = self.group.next()
-        return HappyEyeballsConnector(resolver: resolver, loop: eventLoop, host: host, port: port, connectTimeout: connectTimeout) { event, family in
-            
-            func makeChannel(_ eventLoop: SelectableEventLoop) throws -> DatagramChannel {
-                try DatagramChannel(
-                    eventLoop: eventLoop,
-                    protocolFamily: family,
-                    protocolSubtype: .default
-                )
+    public func connect(resolver: any Resolver & Sendable, host: String, port: Int, connectTimeout: TimeAmount = .seconds(10)) -> EventLoopFuture<Channel> {
+        let loop = self.group.next()
+        let channelInitializer = self.channelInitializer ?? { @Sendable _ in loop.makeSucceededFuture(())
+        }
+        let channelOptions = self._channelOptions
+        
+        let connector = HappyEyeballsConnector(
+            resolver: resolver,
+            loop: loop,
+            host: host,
+            port: port,
+            connectTimeout: connectTimeout
+        ) { eventLoop, protocolFamily in
+            Self.initializeAndRegisterDatagramNewChannel(
+                eventLoop: eventLoop,
+                protocolFamily: protocolFamily,
+                channelInitializer: channelInitializer,
+                channelOptions: channelOptions,
+            ) {
+                $0.eventLoop.makeSucceededFuture(())
             }
-            
-            return self.withNewChannel(eventLoop: eventLoop, makeChannel: makeChannel) { _, channel in
-                return channel.register()
-            }
-        }.resolveAndConnect()
+        }
+        return connector.resolveAndConnect()
     }
 
     /// Connect the `DatagramChannel` to `host` and `port`.
@@ -1890,12 +1904,71 @@ public final class DatagramBootstrap {
         }
     }
     
+    private static func initializeAndRegisterDatagramChannel(
+        _ channel: DatagramChannel,
+        channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<Void>,
+        channelOptions: ChannelOptions.Storage,
+        _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
+    ) -> EventLoopFuture<Channel> {
+        let eventLoop = channel.eventLoop
+
+        @inline(__always)
+        @Sendable
+        func setupChannel() -> EventLoopFuture<Channel> {
+            eventLoop.assertInEventLoop()
+            return channelOptions.applyAllChannelOptions(to: channel).flatMap {
+                channelInitializer(channel)
+            }.flatMap {
+                eventLoop.assertInEventLoop()
+                return channel.registerAndDoSynchronously(body)
+            }.map {
+                channel
+            }.flatMapError { error in
+                channel.close0(error: error, mode: .all, promise: nil)
+                return channel.eventLoop.makeFailedFuture(error)
+            }
+        }
+
+        if eventLoop.inEventLoop {
+            return setupChannel()
+        } else {
+            return eventLoop.flatSubmit {
+                setupChannel()
+            }
+        }
+    }
+    
     private func withNewChannel(
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
         _ bringup: @escaping @Sendable (EventLoop, DatagramChannel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Channel> {
         let eventLoop = group.next()
         return withNewChannel(eventLoop: eventLoop, makeChannel: makeChannel, bringup)
+    }
+    
+    private static func initializeAndRegisterDatagramNewChannel(
+        eventLoop: EventLoop,
+        protocolFamily: NIOBSDSocket.ProtocolFamily,
+        channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<Void>,
+        channelOptions: ChannelOptions.Storage,
+        _ body: @escaping @Sendable (Channel) -> EventLoopFuture<Void>
+    ) -> EventLoopFuture<Channel> {
+        let channel: DatagramChannel
+        do {
+            channel = try DatagramChannel(
+                eventLoop: eventLoop as! SelectableEventLoop,
+                protocolFamily: protocolFamily,
+                protocolSubtype: .default
+            )
+        } catch {
+            return eventLoop.makeFailedFuture(error)
+        }
+        return Self.initializeAndRegisterDatagramChannel(
+            channel,
+            channelInitializer: channelInitializer,
+            channelOptions: channelOptions,
+            body
+        )
     }
 
     private func withNewChannel(eventLoop: EventLoop,
@@ -2122,9 +2195,10 @@ extension DatagramBootstrap {
     private func connect0<ChannelInitializerResult: Sendable, PostRegistrationTransformationResult: Sendable>(
         makeSocketAddress: () throws -> SocketAddress,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) async throws -> PostRegistrationTransformationResult {
         let address = try makeSocketAddress()
         let subtype = self.proto
@@ -2153,9 +2227,10 @@ extension DatagramBootstrap {
     private func bind0<ChannelInitializerResult: Sendable, PostRegistrationTransformationResult: Sendable>(
         makeSocketAddress: () throws -> SocketAddress,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) async throws -> PostRegistrationTransformationResult {
         let address = try makeSocketAddress()
         let subtype = self.proto
@@ -2188,9 +2263,10 @@ extension DatagramBootstrap {
         makeChannel: (_ eventLoop: SelectableEventLoop) throws -> DatagramChannel,
         channelInitializer: @escaping @Sendable (Channel) -> EventLoopFuture<ChannelInitializerResult>,
         registration: @escaping @Sendable (Channel) -> EventLoopFuture<Void>,
-        postRegisterTransformation: @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
-            PostRegistrationTransformationResult
-        >
+        postRegisterTransformation:
+            @escaping @Sendable (ChannelInitializerResult, EventLoop) -> EventLoopFuture<
+                PostRegistrationTransformationResult
+            >
     ) -> EventLoopFuture<PostRegistrationTransformationResult> {
         let eventLoop = self.group.next()
         let bootstrapChannelInitializer =
