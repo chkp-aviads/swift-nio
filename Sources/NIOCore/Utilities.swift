@@ -121,11 +121,26 @@ public enum System: Sendable {
         .map { $0.ProcessorMask.nonzeroBitCount }
         .reduce(0, +)
         #elseif os(Linux) || os(Android)
-        if let quota2 = Linux.coreCountCgroup2Restriction() {
-            return quota2
-        } else if let quota = Linux.coreCountCgroup1Restriction() {
-            return quota
-        } else if let cpusetCount = Linux.coreCount(cpuset: Linux.cpuSetPath) {
+        var cpuSetPath: String?
+
+        switch Linux.cgroupVersion {
+        case .v1:
+            if let quota = Linux.coreCountCgroup1Restriction() {
+                return quota
+            }
+            cpuSetPath = Linux.cpuSetPathV1
+        case .v2:
+            if let quota = Linux.coreCountCgroup2Restriction() {
+                return quota
+            }
+            cpuSetPath = Linux.cpuSetPathV2
+        case .none:
+            break
+        }
+
+        if let cpuSetPath,
+            let cpusetCount = Linux.coreCount(cpuset: cpuSetPath)
+        {
             return cpusetCount
         } else {
             return sysconf(CInt(_SC_NPROCESSORS_ONLN))
@@ -262,15 +277,10 @@ extension System {
     public static let supportsUDPReceiveOffload: Bool = false
     #endif
 
-    /// Returns the UDP maximum segment count if the platform supports and defines it.
+    /// Returns `nil`.
+    @available(*, deprecated, message: "UDP_MAX_SEGMENTS isn't exposed by the Linux kernel")
     public static var udpMaxSegments: Int? {
-        #if os(Linux)
-        let maxSegments = CNIOLinux_UDP_MAX_SEGMENTS
-        if maxSegments != -1 {
-            return maxSegments
-        }
-        #endif
-        return nil
+        nil
     }
 }
 

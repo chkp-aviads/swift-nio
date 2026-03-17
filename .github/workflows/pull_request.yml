@@ -10,7 +10,7 @@ on:
 jobs:
   soundness:
     name: Soundness
-    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@main
+    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.7
     with:
       license_header_check_project_name: "SwiftNIO"
       # Workaround https://github.com/swiftlang/swift-docc/issues/1280
@@ -47,7 +47,7 @@ jobs:
       integration-test-matrix: '${{ steps.generate-matrix.outputs.integration-test-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
       - id: generate-matrix
@@ -55,6 +55,7 @@ jobs:
         env:
           MATRIX_LINUX_SETUP_COMMAND: "apt-get update -y -q && apt-get install -y -q lsof dnsutils netcat-openbsd net-tools curl jq"
           MATRIX_LINUX_COMMAND: "./scripts/integration_tests.sh"
+          MATRIX_LINUX_ENV_VARS_JSON: '{"NIO_ALLOC_COUNTER_TESTS_PARALLEL": "true"}'
 
   integration-tests:
     name: Integration tests
@@ -70,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
       - name: Load vsock_loopback kernel module
@@ -90,8 +91,14 @@ jobs:
     with:
       runner_pool: general
       build_scheme: swift-nio-Package
-      xcode_16_2_build_arguments_override: "-Xswiftc -Xfrontend -Xswiftc -require-explicit-sendable"
-      xcode_16_3_build_arguments_override: "-Xswiftc -Xfrontend -Xswiftc -require-explicit-sendable"
+      xcode_16_3_enabled: false
+      xcode_16_4_enabled: false
+      xcode_26_0_enabled: false
+      xcode_26_1_enabled: false
+      xcode_26_2_enabled: false
+      swift_6_1_enabled: true
+      swift_6_2_enabled: true
+      swift_6_3_enabled: true
 
   static-sdk:
     name: Static Linux Swift SDK

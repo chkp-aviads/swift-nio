@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !os(WASI)
+
 import NIOCore
 
 // This module implements Happy Eyeballs 2 (RFC 8305). A few notes should be made about the design.
@@ -755,3 +757,4 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
         processInput(.resolutionDelayElapsed)
     }
 }
+#endif  // !os(WASI)

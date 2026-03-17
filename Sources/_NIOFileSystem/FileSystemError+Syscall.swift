@@ -791,6 +791,7 @@ extension FileSystemError {
 
     @_spi(Testing)
     public static func symlink(
+        _ name: String,
         errno: Errno,
         link: FilePath,
         target: FilePath,
@@ -843,7 +844,7 @@ extension FileSystemError {
         return FileSystemError(
             code: code,
             message: message,
-            systemCall: "symlink",
+            systemCall: name,
             errno: errno,
             location: location
         )
@@ -926,6 +927,7 @@ extension FileSystemError {
 
     @_spi(Testing)
     public static func unlink(
+        _ name: String,
         errno: Errno,
         path: FilePath,
         location: SourceLocation
@@ -958,7 +960,7 @@ extension FileSystemError {
         return FileSystemError(
             code: code,
             message: message,
-            cause: SystemCallError(systemCall: "unlink", errno: errno),
+            cause: SystemCallError(systemCall: name, errno: errno),
             location: location
         )
     }
@@ -980,6 +982,17 @@ extension FileSystemError {
             code: .unavailable,
             message: "Can't get configuration value for '\(name)'.",
             systemCall: "confstr",
+            errno: errno,
+            location: location
+        )
+    }
+
+    @_spi(Testing)
+    public static func getpwuid_r(errno: Errno, location: SourceLocation) -> Self {
+        FileSystemError(
+            code: .unavailable,
+            message: "Can't get home directory for current user.",
+            systemCall: "getpwuid_r",
             errno: errno,
             location: location
         )

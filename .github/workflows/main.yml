@@ -41,7 +41,7 @@ jobs:
       integration-test-matrix: '${{ steps.generate-matrix.outputs.integration-test-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
       - id: generate-matrix
@@ -49,6 +49,7 @@ jobs:
         env:
           MATRIX_LINUX_SETUP_COMMAND: "apt-get update -y -q && apt-get install -y -q lsof dnsutils netcat-openbsd net-tools curl jq"
           MATRIX_LINUX_COMMAND: "./scripts/integration_tests.sh"
+          MATRIX_LINUX_ENV_VARS_JSON: '{"NIO_ALLOC_COUNTER_TESTS_PARALLEL": "true"}'
 
   integration-tests:
     name: Integration tests
@@ -83,8 +84,15 @@ jobs:
     with:
       runner_pool: nightly
       build_scheme: swift-nio-Package
-      xcode_16_2_build_arguments_override: "-Xswiftc -Xfrontend -Xswiftc -require-explicit-sendable"
-      xcode_16_3_build_arguments_override: "-Xswiftc -Xfrontend -Xswiftc -require-explicit-sendable"
+      debug_output_enabled: true
+      xcode_16_3_enabled: false
+      xcode_16_4_enabled: false
+      xcode_26_0_enabled: false
+      xcode_26_1_enabled: false
+      xcode_26_2_enabled: false
+      swift_6_1_enabled: true
+      swift_6_2_enabled: true
+      swift_6_3_enabled: true
       macos_xcode_test_enabled: false  # Disabled because of an issue
       ios_xcode_test_enabled: true
       watchos_xcode_test_enabled: true

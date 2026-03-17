@@ -16,8 +16,8 @@ on:
         default: ""
       linux_5_10_enabled:
         type: boolean
-        description: "Boolean to enable the Linux 5.10 Swift version matrix job. Defaults to true."
-        default: true
+        description: "Boolean to enable the Linux 5.10 Swift version matrix job. Defaults to false."
+        default: false
       linux_5_10_arguments_override:
         type: string
         description: "The arguments passed to swift test in the Linux 5.10 Swift version matrix job."
@@ -158,14 +158,14 @@ jobs:
       unit-test-matrix: '${{ steps.generate-matrix.outputs.unit-test-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
       - id: generate-matrix
         run: |
           # Validate and use JSON environment variables directly
-          linux_env_vars_json='${{ inputs.linux_env_vars }}'
-          windows_env_vars_json='${{ inputs.windows_env_vars }}'
+          linux_env_vars_json="$INPUT_LINUX_ENV_VARS"
+          windows_env_vars_json="$INPUT_WINDOWS_ENV_VARS"
 
           # Validate JSON format
           if ! echo "$linux_env_vars_json" | jq empty 2>/dev/null; then
@@ -181,6 +181,8 @@ jobs:
           # Generate matrix
           echo "unit-test-matrix=$(curl -s --retry 3 https://raw.githubusercontent.com/apple/swift-nio/main/scripts/generate_matrix.sh | MATRIX_LINUX_ENV_VARS_JSON="${linux_env_vars_json}" MATRIX_WINDOWS_ENV_VARS_JSON="${windows_env_vars_json}" bash)" >> "$GITHUB_OUTPUT"
         env:
+          INPUT_LINUX_ENV_VARS: ${{ inputs.linux_env_vars }}
+          INPUT_WINDOWS_ENV_VARS: ${{ inputs.windows_env_vars }}
           MATRIX_LINUX_SETUP_COMMAND: "swift --version"
           MATRIX_LINUX_COMMAND: "swift test"
           MATRIX_MIN_SWIFT_VERSION: ${{ inputs.minimum_swift_version }}

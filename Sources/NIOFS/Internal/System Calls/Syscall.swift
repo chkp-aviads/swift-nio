@@ -91,6 +91,29 @@ public enum Syscall: Sendable {
     }
 
     @_spi(Testing)
+    public static func rename(
+        from old: FilePath,
+        relativeTo oldFD: FileDescriptor,
+        to new: FilePath,
+        relativeTo newFD: FileDescriptor,
+        options: RenameOptions
+    ) -> Result<Void, Errno> {
+        nothingOrErrno(retryOnInterrupt: false) {
+            old.withPlatformString { oldPath in
+                new.withPlatformString { newPath in
+                    system_renameatx_np(
+                        oldFD.rawValue,
+                        oldPath,
+                        newFD.rawValue,
+                        newPath,
+                        options.rawValue
+                    )
+                }
+            }
+        }
+    }
+
+    @_spi(Testing)
     public struct RenameOptions: OptionSet, Sendable {
         public var rawValue: CUnsignedInt
 
@@ -220,6 +243,19 @@ public enum Syscall: Sendable {
     }
 
     @_spi(Testing)
+    public static func unlinkat(
+        path: FilePath,
+        relativeTo directoryDescriptor: FileDescriptor,
+        flags: CInt = 0
+    ) -> Result<Void, Errno> {
+        nothingOrErrno(retryOnInterrupt: false) {
+            path.withPlatformString { ptr in
+                system_unlinkat(directoryDescriptor.rawValue, ptr, flags)
+            }
+        }
+    }
+
+    @_spi(Testing)
     public static func symlink(
         to destination: FilePath,
         from source: FilePath
@@ -228,6 +264,21 @@ public enum Syscall: Sendable {
             source.withPlatformString { src in
                 destination.withPlatformString { dst in
                     system_symlink(dst, src)
+                }
+            }
+        }
+    }
+
+    @_spi(Testing)
+    public static func symlinkat(
+        to destination: FilePath,
+        in directoryDescriptor: FileDescriptor,
+        from source: FilePath
+    ) -> Result<Void, Errno> {
+        nothingOrErrno(retryOnInterrupt: false) {
+            source.withPlatformString { src in
+                destination.withPlatformString { dst in
+                    system_symlinkat(dst, directoryDescriptor.rawValue, src)
                 }
             }
         }
@@ -278,6 +329,13 @@ public enum Syscall: Sendable {
             system_futimens(fd.rawValue, times)
         }
     }
+
+    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl) || canImport(Bionic)
+    @_spi(Testing)
+    public static func getuid() -> uid_t {
+        system_getuid()
+    }
+    #endif
 }
 
 @_spi(Testing)
@@ -437,4 +495,47 @@ public enum Libc: Sendable {
             libc_fts_close(pointer)
         }
     }
+
+    @_spi(Testing)
+    public static func homeDirectoryFromEnvironment() -> FilePath? {
+        if let home = getenv("HOME"), home.pointee != 0 {
+            return FilePath(String(cString: home))
+        }
+        #if os(Windows)
+        if let profile = getenv("USERPROFILE"), profile.pointee != 0 {
+            return FilePath(String(cString: profile))
+        }
+        #endif
+        return nil
+    }
+
+    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl) || canImport(Bionic)
+    @_spi(Testing)
+    public static func homeDirectoryFromPasswd() -> Result<FilePath, Errno> {
+        let uid = Syscall.getuid()
+        var pwd = passwd()
+        var result: UnsafeMutablePointer<passwd>? = nil
+
+        return withUnsafeTemporaryAllocation(of: CChar.self, capacity: 1024) { buffer in
+            let callResult = nothingOrErrno(retryOnInterrupt: true) {
+                libc_getpwuid_r(
+                    uid,
+                    &pwd,
+                    buffer.baseAddress!,
+                    buffer.count,
+                    &result
+                )
+            }
+            switch callResult {
+            case .success:
+                guard result != nil, let directoryPointer = pwd.pw_dir else {
+                    return .failure(.noSuchFileOrDirectory)
+                }
+                return .success(FilePath(String(cString: directoryPointer)))
+            case .failure(let errno):
+                return .failure(errno)
+            }
+        }
+    }
+    #endif
 }

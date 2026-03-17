@@ -11,6 +11,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+
+#if !os(WASI)
+
 import CNIOLinux
 import CNIOOpenBSD
 import NIOCore
@@ -2792,3 +2795,4 @@ private struct DefaultNIOPipeBootstrapHooks: NIOPipeBootstrapHooks {
         try PipeChannel(eventLoop: eventLoop, input: input, output: output)
     }
 }
+#endif  // !os(WASI)
