@@ -1075,24 +1075,36 @@ public final class ChannelPipeline: ChannelInvoker {
         self.tail?.prev = self.head
     }
     
-    public func removeAllHandlersAfter(context _context: ChannelHandlerContext) {
-        self.eventLoop.assertInEventLoop()
+    /// Collect all handler contexts forward from `startContext.next` to tail,
+    /// then remove each one. Handlers conforming to `RemovableChannelHandler`
+    /// are removed via `startUserTriggeredRemoval` so they can forward pending
+    /// data before leaving the pipeline.
+    private func collectAndRemoveHandlers(after startContext: ChannelHandlerContext) {
+        var contextsToRemove: [ChannelHandlerContext] = []
+        var ctx = startContext.next
+        while let context = ctx, context !== tail {
+            contextsToRemove.append(context)
+            ctx = context.next
+        }
 
-        if let tail = self.tail {
-            while let context = tail.prev, context !== head, context !== _context {
+        for context in contextsToRemove {
+            if context.handler is RemovableChannelHandler {
+                context.startUserTriggeredRemoval(promise: nil)
+            } else {
                 removeHandlerFromPipeline(context: context, promise: nil)
             }
         }
     }
+
+    public func removeAllHandlersAfter(context: ChannelHandlerContext) {
+        self.eventLoop.assertInEventLoop()
+        collectAndRemoveHandlers(after: context)
+    }
     
     public func removeAllHandlers() {
         self.eventLoop.assertInEventLoop()
-
-        if let head = self.head {
-            while let context = head.next, context !== tail {
-                removeHandlerFromPipeline(context: context, promise: nil)
-            }
-        }
+        guard let head = self.head else { return }
+        collectAndRemoveHandlers(after: head)
     }
 }
 
