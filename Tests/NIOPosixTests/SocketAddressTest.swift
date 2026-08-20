@@ -18,6 +18,10 @@ import XCTest
 @testable import NIOCore
 @testable import NIOPosix
 
+#if os(Windows)
+import WinSDK
+#endif
+
 class SocketAddressTest: XCTestCase {
 
     func testDescriptionWorks() throws {
@@ -82,7 +86,7 @@ class SocketAddressTest: XCTestCase {
         ]
 
         var address = sockaddr_in6()
-        #if os(Linux) || os(Android)  // no sin6_len on Linux/Android
+        #if os(Linux) || os(Android) || os(Windows)  // no sin6_len on Linux/Android/Windows
         #else
         address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         #endif
@@ -697,6 +701,20 @@ class SocketAddressTest: XCTestCase {
 
         for vector in vectors {
             XCTAssertEqual(SocketAddress(ipv6MaskForPrefix: vector.0), vector.1)
+        }
+    }
+
+    func testGetaddrinfoErrorCodeIsPreserved() {
+        // .invalid TLD is guaranteed by RFC 6761 to never resolve.
+        XCTAssertThrowsError(try SocketAddress.makeAddressResolvingHost("somehost.invalid", port: 80)) { error in
+            guard let unknownHostError = error as? SocketAddressError.UnknownHost else {
+                XCTFail("Expected SocketAddressError.UnknownHost, got \(type(of: error)): \(error)")
+                return
+            }
+            XCTAssertEqual(unknownHostError.host, "somehost.invalid")
+            XCTAssertEqual(unknownHostError.port, 80)
+            XCTAssertNotEqual(unknownHostError.errorCode, 0, "Error code should be non-zero")
+            XCTAssertFalse(unknownHostError.errorDescription.isEmpty, "Error description should not be empty")
         }
     }
 }

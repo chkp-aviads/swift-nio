@@ -104,6 +104,11 @@ public struct ByteBufferAllocator: Sendable {
     ///
     /// ## Example: Integrating with External Buffer System
     ///
+    /// - Precondition: `index` must be a valid, non-negative index within the buffer's storage.
+    ///   Unlike the `get*` family (which returns `nil` for an out-of-range index), this method
+    ///   traps on an invalid `index` — it is the caller's responsibility to validate any
+    ///   `index` derived from untrusted or external input before calling this method.
+    ///
     /// ```swift
     /// let allocator = ByteBufferAllocator { size in
     ///     externalSystem.allocate(Int(size))
@@ -175,11 +180,11 @@ public struct ByteBufferAllocator: Sendable {
 }
 
 @inlinable func _toCapacity(_ value: Int) -> ByteBuffer._Capacity {
-    ByteBuffer._Capacity(truncatingIfNeeded: value)
+    ByteBuffer._Capacity(value)
 }
 
 @inlinable func _toIndex(_ value: Int) -> ByteBuffer._Index {
-    ByteBuffer._Index(truncatingIfNeeded: value)
+    ByteBuffer._Index(value)
 }
 
 /// `ByteBuffer` stores contiguously allocated raw bytes. It is a random and sequential accessible sequence of zero or
@@ -212,6 +217,11 @@ public struct ByteBufferAllocator: Sendable {
 ///
 /// If you need to loop over all the bytes in the buffer, you can use the `Collection` conformance with ``readableBytesView``:
 ///
+///
+/// - Precondition: `index` must be a valid, non-negative index within the buffer's storage.
+///   Unlike the `get*` family (which returns `nil` for an out-of-range index), this method
+///   traps on an invalid `index` — it is the caller's responsibility to validate any
+///   `index` derived from untrusted or external input before calling this method.
 ///     for byte in buffer.readableBytesView {
 ///         print(byte)
 ///     }
@@ -1061,8 +1071,12 @@ public struct ByteBuffer {
         else {
             return nil
         }
-        let index = _toIndex(index)
-        let length = _toCapacity(length)
+        // Thanks to the above bounds checks, we can translate into `_Index` and `_Capacity` with
+        // fewer branches, using `truncatingIfNeeded` initializers.
+        //   - length <= self.writerIndex // this ensures length is in the UInt32 space.
+        //   - index <= self.writerIndex &- length. This ensures index is in the UInt32 space.
+        let index = ByteBuffer._Index(truncatingIfNeeded: index)
+        let length = ByteBuffer._Capacity(truncatingIfNeeded: length)
 
         // The arithmetic below is safe because:
         // 1. maximum `writerIndex` <= self._slice.count (see `_moveWriterIndex`)
@@ -1265,11 +1279,22 @@ extension ByteBuffer: CustomStringConvertible, CustomDebugStringConvertible {
 // change types to the user visible `Int`
 extension ByteBuffer {
     /// Copy the collection of `bytes` into the `ByteBuffer` at `index`. Does not move the writer index.
+    ///
+    /// - Precondition: `index` must be a valid, non-negative index within the buffer's storage.
+    ///   Unlike the `get*` family (which returns `nil` for an out-of-range index), this method
+    ///   traps on an invalid `index` — it is the caller's responsibility to validate any
+    ///   `index` derived from untrusted or external input before calling this method.
     @discardableResult
     @inlinable
     public mutating func setBytes<Bytes: Sequence>(_ bytes: Bytes, at index: Int) -> Int where Bytes.Element == UInt8 {
         Int(self._setBytes(bytes, at: _toIndex(index)))
     }
+
+    ///
+    /// - Precondition: `index` must be a valid, non-negative index within the buffer's storage.
+    ///   Unlike the `get*` family (which returns `nil` for an out-of-range index), this method
+    ///   traps on an invalid `index` — it is the caller's responsibility to validate any
+    ///   `index` derived from untrusted or external input before calling this method.
 
     /// Copy `bytes` into the `ByteBuffer` at `index`. Does not move the writer index.
     @discardableResult
