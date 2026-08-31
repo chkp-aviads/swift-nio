@@ -90,7 +90,7 @@ extension SocketAddressError {
 
         public var errorDescription: String
 
-        package init(host: String, port: Int, errorCode: Int, errorDescription: String) {
+        public init(host: String, port: Int, errorCode: Int, errorDescription: String) {
             self.host = host
             self.port = port
             self.errorCode = errorCode
