@@ -622,9 +622,16 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
     /// Cleans up internal state and fails the connection promise.
     private func timedOut() {
         cleanUp()
-        self.connector.resolutionPromise.fail(
-            ChannelError.connectTimeout(self.connector.connectTimeout)
-        )
+        // A target that already failed for a definite reason — a rejected certificate, a refused
+        // connection — explains this failure better than the timeout another target ran into. Only
+        // report the timeout when no attempt got far enough to tell us anything.
+        if self.error.connectionErrors.isEmpty {
+            self.connector.resolutionPromise.fail(
+                ChannelError.connectTimeout(self.connector.connectTimeout)
+            )
+        } else {
+            self.connector.resolutionPromise.fail(self.error)
+        }
     }
 
     /// Called when we've attempted to connect to all our resolved targets,
