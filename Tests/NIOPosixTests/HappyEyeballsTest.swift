@@ -945,12 +945,21 @@ final class HappyEyeballsTest: XCTestCase {
         XCTAssertEqual(channels.count, 2)
         XCTAssertEqual(channels.last!.state(), .closed)
 
-        switch channelFuture.getError() {
-        case .some(ChannelError.connectTimeout(.milliseconds(100))):
-            break
-        default:
+        // The timeout fired while the AAAA attempt was still in flight, but the A attempt had
+        // already failed for a definite reason. Report that reason rather than the timeout: a
+        // rejected certificate hidden behind an unexplained `connectTimeout` is both useless to
+        // read and invisible to callers that classify retryability by unwrapping
+        // `NIOConnectionError.connectionErrors`.
+        guard let error = channelFuture.getError() as? NIOConnectionError else {
             XCTFail("Got unexpected error: \(String(describing: channelFuture.getError()))")
+            return
         }
+        XCTAssertEqual(error.connectionErrors.count, 1)
+        XCTAssertEqual(error.connectionErrors.first?.target, SINGLE_IPv4_RESULT.first)
+        XCTAssertTrue(
+            error.connectionErrors.first?.error is DummyError,
+            "Expected the A attempt's DummyError, got \(String(describing: error.connectionErrors.first?.error))"
+        )
     }
 
     func testDelayedAResult() throws {
