@@ -1387,6 +1387,33 @@ final class HappyEyeballsTest: XCTestCase {
         XCTAssertNoThrow(try client.close().wait())
     }
 
+    func testConnectWithResolverUsesTheSuppliedResolver() throws {
+        // `connect(resolver:host:port:)` must consult the resolver it is handed rather than the
+        // bootstrap's default. The hostname here is deliberately unresolvable, so the connection
+        // can only succeed if the supplied resolver was the one asked.
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer {
+            XCTAssertNoThrow(try group.syncShutdownGracefully())
+        }
+
+        let server = try ServerBootstrap(group: group)
+            .bind(host: "127.0.0.1", port: 0)
+            .wait()
+        defer {
+            XCTAssertNoThrow(try server.close().wait())
+        }
+
+        let resolver = FixedAddressResolver(loop: group.next(), address: server.localAddress!)
+        let client = try ClientBootstrap(group: group)
+            .connect(resolver: resolver, host: "not-a-real-host.invalid", port: server.localAddress!.port!)
+            .wait()
+        defer {
+            XCTAssertNoThrow(try client.close().wait())
+        }
+
+        XCTAssertEqual(resolver.queriedHosts, ["not-a-real-host.invalid"])
+    }
+
     func testResolutionTimeoutAndResolutionInSameTick() throws {
         let channels = ChannelSet()
         let (eyeballer, resolver, loop) = buildEyeballer(host: "example.com", port: 80) {
@@ -1469,4 +1496,34 @@ struct ChannelSet: Sendable, Sequence {
     func finishAll() {
         self.channels.withLockedValue { $0 }.finishAll()
     }
+}
+
+/// A resolver that answers every A query with one fixed address and every AAAA query with none.
+///
+/// Used to prove a bootstrap consulted the resolver it was given: the host it is asked about is
+/// never a resolvable name, so the default `GetaddrinfoResolver` could not have produced a result.
+private final class FixedAddressResolver: Resolver, Sendable {
+    private let loop: EventLoop
+    private let address: SocketAddress
+    private let queried = NIOLockedValueBox<[String]>([])
+
+    var queriedHosts: [String] {
+        self.queried.withLockedValue { $0 }
+    }
+
+    init(loop: EventLoop, address: SocketAddress) {
+        self.loop = loop
+        self.address = address
+    }
+
+    func initiateAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+        self.queried.withLockedValue { $0.append(host) }
+        return self.loop.makeSucceededFuture([self.address])
+    }
+
+    func initiateAAAAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+        self.loop.makeSucceededFuture([])
+    }
+
+    func cancelQueries() {}
 }

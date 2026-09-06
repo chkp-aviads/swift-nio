@@ -1034,6 +1034,23 @@ public final class ClientBootstrap: NIOClientTCPBootstrapProtocol {
         return connector.resolveAndConnect()
     }
 
+    /// Specify the `host` and `port` to connect to, resolving them with `resolver`.
+    ///
+    /// Equivalent to `resolver(resolver).connect(host:port:)`, and exists so that callers which
+    /// carry a resolver around can hand it over at the point of connection rather than having to
+    /// configure the bootstrap earlier. Happy Eyeballs and `connectTimeout` behave exactly as they
+    /// do for `connect(host:port:)`.
+    ///
+    /// - Parameters:
+    ///   - resolver: The resolver to use for this connection attempt.
+    ///   - host: The host to connect to.
+    ///   - port: The port to connect to.
+    /// - Returns: An `EventLoopFuture<Channel>` to deliver the `Channel` when connected.
+    @preconcurrency
+    public func connect(resolver: any Resolver & Sendable, host: String, port: Int) -> EventLoopFuture<Channel> {
+        self.resolver(resolver).connect(host: host, port: port)
+    }
+
     private static func connect(
         freshChannel channel: Channel,
         address: SocketAddress,
