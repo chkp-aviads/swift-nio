@@ -21,8 +21,8 @@ extension ChannelOptions.Types {
     /// must not change under callers correlating log lines by it.
     ///
     /// The value is an **opaque** string, unique for the lifetime of the process. Do not parse it
-    /// or assume a format: `NIOPosix` mints a counter, `NIOTransportServices` a UUID string, and
-    /// neither is part of the contract. Treat it as a token to group log lines by.
+    /// or assume a format -- the prefix and counter `ChannelIDGenerator` produces are not part of
+    /// the contract. Treat it as a token to group log lines by.
     ///
     /// Every `Channel` in this package answers it -- `NIOPosix`, `NIOEmbedded` and, out of tree,
     /// `NIOTransportServices` -- so a caller can ask any channel for its id without knowing which
