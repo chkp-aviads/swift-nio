@@ -171,6 +171,10 @@ public final class NIOAsyncTestingChannel: Channel {
     /// - Note: An ``NIOAsyncTestingChannel`` starts _inactive_ and can be activated, for example by calling `connect`.
     public var isActive: Bool { channelcore.isActive }
 
+    /// - see: `ChannelOptions.Types.ChannelID`
+    @usableFromInline
+    internal let channelID = ChannelIDGenerator.next(prefix: "testing")
+
     /// - see: `ChannelOptions.Types.AllowRemoteHalfClosureOption`
     public var allowRemoteHalfClosure: Bool {
         get {
@@ -608,6 +612,9 @@ public final class NIOAsyncTestingChannel: Channel {
         }
         if option is ChannelOptions.Types.AllowRemoteHalfClosureOption {
             return self.allowRemoteHalfClosure as! Option.Value
+        }
+        if option is ChannelOptions.Types.ChannelID {
+            return self.channelID as! Option.Value
         }
         if option is ChannelOptions.Types.BufferedWritableBytesOption {
             let result = self.channelcore.pendingOutboundBuffer.reduce(0) { partialResult, dataAndPromise in

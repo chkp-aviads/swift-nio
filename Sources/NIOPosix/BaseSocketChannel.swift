@@ -294,6 +294,11 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
     private let isActiveAtomic: ManagedAtomic<Bool> = .init(false)
     // just a thread-safe way of having something to print about the socket from any thread
     internal let socketDescription: String
+    /// Stable per-channel identity, surfaced through `ChannelOptions.Types.ChannelID`.
+    ///
+    /// Assigned once at construction and never mutated, so it is safe to read from any thread --
+    /// which matters because callers correlate log lines by it long after the channel is created.
+    internal let channelID = ChannelIDGenerator.next()
 
     // MARK: Variables, on EventLoop thread only
     var readPending = false
@@ -744,6 +749,8 @@ class BaseSocketChannel<SocketType: BaseSocketProtocol>: SelectableChannel, Chan
             return autoRead as! Option.Value
         case _ as ChannelOptions.Types.MaxMessagesPerReadOption:
             return maxMessagesPerRead as! Option.Value
+        case _ as ChannelOptions.Types.ChannelID:
+            return self.channelID as! Option.Value
         default:
             fatalError("option \(option) not supported")
         }

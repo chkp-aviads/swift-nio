@@ -838,6 +838,10 @@ public final class EmbeddedChannel: Channel {
     @usableFromInline
     internal var isOpen: Bool { channelcore.isOpen }
 
+    /// - see: `ChannelOptions.Types.ChannelID`
+    @usableFromInline
+    internal let channelID = ChannelIDGenerator.next(prefix: "embedded")
+
     /// - see: `ChannelOptions.Types.AllowRemoteHalfClosureOption`
     public var allowRemoteHalfClosure: Bool {
         get {
@@ -1152,6 +1156,9 @@ public final class EmbeddedChannel: Channel {
         }
         if option is ChannelOptions.Types.AllowRemoteHalfClosureOption {
             return self.allowRemoteHalfClosure as! Option.Value
+        }
+        if option is ChannelOptions.Types.ChannelID {
+            return self.channelID as! Option.Value
         }
         if option is ChannelOptions.Types.BufferedWritableBytesOption {
             let result = self.channelcore.pendingOutboundBuffer.reduce(0) { partialResult, dataAndPromise in
