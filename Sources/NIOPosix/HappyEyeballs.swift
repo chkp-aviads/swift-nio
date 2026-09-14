@@ -90,6 +90,30 @@ extension NIOConnectionError: CustomStringConvertible {
     }
 }
 
+/// Which address family Happy Eyeballs tries first.
+///
+/// RFC 8305 says IPv6, and for a protocol whose connection attempt proves something -- TCP, where
+/// `connect` completing means a handshake completed -- that is the right default: a preference
+/// that turns out to be wrong fails, and the other family is tried.
+///
+/// A datagram "connection" proves nothing. `connect(2)` on a UDP socket only asks the kernel for a
+/// route, so the attempt succeeds in microseconds whether or not anything is reachable, and the
+/// preferred family wins unverified. That makes the two wrong guesses wildly unequal:
+///
+/// - Guessing IPv4 on an IPv6-only host fails the route lookup outright (`ENETUNREACH` /
+///   `EHOSTUNREACH`), which counts as a failed attempt and moves straight on to IPv6. One syscall.
+/// - Guessing IPv6 on a host whose IPv6 route exists but carries nothing succeeds, and every
+///   datagram is then dropped in silence, with no signal that would ever trigger a fallback.
+///
+/// So a datagram connector prefers IPv4: not because IPv4 is better, but because being wrong about
+/// it is loud and self-correcting, while being wrong about IPv6 is silent and permanent.
+public enum HappyEyeballsAddressPreference: Sendable {
+    /// Try AAAA first, per RFC 8305. The default, and what stream connections use.
+    case ipv6
+    /// Try A first. For protocols that cannot tell a working path from an unusable one.
+    case ipv4
+}
+
 /// A simple iterator that manages iterating over the possible targets.
 ///
 /// This iterator knows how to merge together the A and AAAA records in a sensible way:
@@ -103,9 +127,15 @@ private struct TargetIterator: IteratorProtocol {
         case v6
     }
 
-    private var previousAddressFamily: AddressFamily = .v4
+    /// The family emitted *last*, which is why it is seeded to the opposite of the preference:
+    /// `next()` always emits the other one first, then alternates as RFC 8305 asks.
+    private var previousAddressFamily: AddressFamily
     private var aQueryResults: [SocketAddress] = []
     private var aaaaQueryResults: [SocketAddress] = []
+
+    init(preferring preference: HappyEyeballsAddressPreference) {
+        self.previousAddressFamily = preference == .ipv6 ? .v4 : .v6
+    }
 
     mutating func aResultsAvailable(_ results: [SocketAddress]) {
         aQueryResults.append(contentsOf: results)
@@ -197,6 +227,9 @@ public struct HappyEyeballsConnector<ChannelBuilderResult: Sendable>: Sendable {
     /// The amount of time to allow for the overall connection process before timing it out.
     fileprivate let connectTimeout: TimeAmount
 
+    /// Which address family to try first. See ``HappyEyeballsAddressPreference``.
+    fileprivate let addressPreference: HappyEyeballsAddressPreference
+
     /// The promise that will hold the final connected channel.
     fileprivate let resolutionPromise: EventLoopPromise<(Channel, ChannelBuilderResult)>
 
@@ -208,6 +241,7 @@ public struct HappyEyeballsConnector<ChannelBuilderResult: Sendable>: Sendable {
         connectTimeout: TimeAmount,
         resolutionDelay: TimeAmount = .milliseconds(50),
         connectionDelay: TimeAmount = .milliseconds(250),
+        addressPreference: HappyEyeballsAddressPreference = .ipv6,
         channelBuilderCallback:
             @escaping @Sendable (EventLoop, NIOBSDSocket.ProtocolFamily) -> EventLoopFuture<
                 (Channel, ChannelBuilderResult)
@@ -218,6 +252,7 @@ public struct HappyEyeballsConnector<ChannelBuilderResult: Sendable>: Sendable {
         self.host = host
         self.port = port
         self.connectTimeout = connectTimeout
+        self.addressPreference = addressPreference
         self.channelBuilderCallback = channelBuilderCallback
 
         self.resolutionPromise = self.loop.makePromise()
@@ -243,6 +278,7 @@ public struct HappyEyeballsConnector<ChannelBuilderResult: Sendable>: Sendable {
         connectTimeout: TimeAmount,
         resolutionDelay: TimeAmount = .milliseconds(50),
         connectionDelay: TimeAmount = .milliseconds(250),
+        addressPreference: HappyEyeballsAddressPreference = .ipv6,
         channelBuilderCallback: @escaping @Sendable (EventLoop, NIOBSDSocket.ProtocolFamily) -> EventLoopFuture<Channel>
     ) where ChannelBuilderResult == Void {
         self.init(
@@ -252,7 +288,8 @@ public struct HappyEyeballsConnector<ChannelBuilderResult: Sendable>: Sendable {
             port: port,
             connectTimeout: connectTimeout,
             resolutionDelay: resolutionDelay,
-            connectionDelay: connectionDelay
+            connectionDelay: connectionDelay,
+            addressPreference: addressPreference
         ) { loop, protocolFamily in
             channelBuilderCallback(loop, protocolFamily).map { ($0, ()) }
         }
@@ -361,7 +398,7 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
 
     /// Our iterator of resolved targets. This keeps track of what targets are left to have
     /// connection attempts made to them, and emits them in the appropriate order as needed.
-    private var targets: TargetIterator = TargetIterator()
+    private lazy var targets: TargetIterator = TargetIterator(preferring: self.connector.addressPreference)
 
     /// An array of futures of channels that are currently attempting to connect.
     ///
@@ -728,6 +765,18 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
         }
     }
 
+    /// Whether the A lookup is the one this connector would rather use.
+    ///
+    /// The state machine below distinguishes the *preferred* family from the other one, but names
+    /// both its states and its inputs after AAAA and A because AAAA was historically always the
+    /// preferred one: `.resolverAAAACompleted` means "the preferred family resolved, start
+    /// connecting", and `.resolverACompleted` means "the other family resolved, hold the
+    /// resolution delay open in case the preferred one is still coming". Preferring IPv4 is
+    /// therefore a matter of which lookup delivers which input -- the machine itself is unchanged.
+    private var aLookupIsPreferred: Bool {
+        self.connector.addressPreference == .ipv4
+    }
+
     /// A future callback that fires when a DNS A lookup completes.
     private func whenALookupComplete(future: EventLoopFuture<[SocketAddress]>.Isolated) {
         future.map { results in
@@ -735,8 +784,14 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
         }.recover { err in
             self.error.dnsAError = err
         }.whenComplete { (_: Result<Void, Error>) in
+            if self.aLookupIsPreferred {
+                // The resolution delay exists to wait for the preferred family. This is it.
+                self.resolutionTask?.cancel()
+                self.resolutionTask = nil
+            }
+
             self.dnsResolutions += 1
-            self.processInput(.resolverACompleted)
+            self.processInput(self.aLookupIsPreferred ? .resolverAAAACompleted : .resolverACompleted)
         }
     }
 
@@ -747,14 +802,16 @@ private final class HappyEyeballsConnectorRunner<ChannelBuilderResult: Sendable>
         }.recover { err in
             self.error.dnsAAAAError = err
         }.whenComplete { (_: Result<Void, Error>) in
-            // It's possible that we were waiting to time out here, so if we were we should
-            // cancel that.
-            self.resolutionTask?.cancel()
-            self.resolutionTask = nil
+            if !self.aLookupIsPreferred {
+                // It's possible that we were waiting to time out here, so if we were we should
+                // cancel that.
+                self.resolutionTask?.cancel()
+                self.resolutionTask = nil
+            }
 
             self.dnsResolutions += 1
 
-            self.processInput(.resolverAAAACompleted)
+            self.processInput(self.aLookupIsPreferred ? .resolverACompleted : .resolverAAAACompleted)
         }
     }
 

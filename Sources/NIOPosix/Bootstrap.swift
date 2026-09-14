@@ -1859,7 +1859,10 @@ public final class DatagramBootstrap {
             loop: loop,
             host: host,
             port: port,
-            connectTimeout: connectTimeout
+            connectTimeout: connectTimeout,
+            // Datagrams only. A UDP `connect` is a route lookup, not a handshake, so it cannot tell
+            // a working path from a black hole -- see `HappyEyeballsAddressPreference`.
+            addressPreference: .ipv4
         ) { eventLoop, protocolFamily in
             Self.initializeAndRegisterDatagramNewChannel(
                 eventLoop: eventLoop,

@@ -1423,6 +1423,113 @@ final class HappyEyeballsTest: XCTestCase {
         XCTAssertEqual(resolver.queriedHosts, ["not-a-real-host.invalid"])
     }
 
+    /// Returns a loopback address of `family` that nothing is listening on.
+    ///
+    /// Bound and immediately released, so the port is routable -- `connect(2)` will not fail
+    /// `ENETUNREACH` -- but refuses TCP and answers UDP with nothing.
+    private func closedLoopbackAddress(host: String, group: EventLoopGroup) throws -> SocketAddress {
+        let probe = try ServerBootstrap(group: group).bind(host: host, port: 0).wait()
+        let address = probe.localAddress!
+        try probe.close().wait()
+        return address
+    }
+
+    func testTCPConnectFallsBackWhenThePreferredFamilyIsRefused() throws {
+        // The control for `testDatagramConnectTakesThePreferredFamilyWithoutTestingIt` below.
+        // Happy Eyeballs prefers AAAA, so it tries the v6 address first; the TCP handshake there is
+        // refused, that attempt fails, and the connector moves on to the working v4 address. The
+        // mechanism does what it promises when an attempt can actually fail.
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer {
+            XCTAssertNoThrow(try group.syncShutdownGracefully())
+        }
+
+        let server = try ServerBootstrap(group: group).bind(host: "127.0.0.1", port: 0).wait()
+        defer {
+            XCTAssertNoThrow(try server.close().wait())
+        }
+        let deadV6 = try self.closedLoopbackAddress(host: "::1", group: group)
+
+        let resolver = DualStackFixedResolver(loop: group.next(), v4: server.localAddress!, v6: deadV6)
+        let client = try ClientBootstrap(group: group)
+            .connect(resolver: resolver, host: "not-a-real-host.invalid", port: server.localAddress!.port!)
+            .wait()
+        defer {
+            XCTAssertNoThrow(try client.close().wait())
+        }
+
+        XCTAssertEqual(client.remoteAddress, server.localAddress,
+                       "TCP should fall back to the A record once the AAAA attempt is refused")
+    }
+
+    func testDatagramConnectPrefersIPv4() throws {
+        // A UDP `connect` is a route lookup, not a handshake: it returns as soon as the kernel has
+        // somewhere to send, whether or not anything is there. So whichever family is tried first
+        // wins unverified -- the 250ms `connectionDelay` that would start the second attempt never
+        // elapses, because the first one already "succeeded" in microseconds.
+        //
+        // That is why datagrams prefer IPv4. Here the AAAA address has nothing behind it. Trying
+        // it first would connect, and every datagram after that would vanish with no error. Trying
+        // IPv4 first lands on the address that actually works, and had IPv4 been the unusable one
+        // its route lookup would have failed and the connector would have moved to IPv6.
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer {
+            XCTAssertNoThrow(try group.syncShutdownGracefully())
+        }
+
+        let server = try DatagramBootstrap(group: group).bind(host: "127.0.0.1", port: 0).wait()
+        defer {
+            XCTAssertNoThrow(try server.close().wait())
+        }
+        let deadV6 = try self.closedLoopbackAddress(host: "::1", group: group)
+
+        let resolver = DualStackFixedResolver(loop: group.next(), v4: server.localAddress!, v6: deadV6)
+        let client = try DatagramBootstrap(group: group)
+            .connect(resolver: resolver, host: "not-a-real-host.invalid", port: server.localAddress!.port!)
+            .wait()
+        defer {
+            XCTAssertNoThrow(try client.close().wait())
+        }
+
+        XCTAssertEqual(client.remoteAddress, server.localAddress,
+                       "a datagram connection must try the A record first")
+        XCTAssertNotEqual(client.remoteAddress, deadV6)
+    }
+
+    func testTCPConnectStillPrefersIPv6() throws {
+        // The datagram preference must not leak into stream connections. TCP's handshake proves
+        // the address works, so RFC 8305's IPv6-first ordering stays: both families are reachable
+        // here, and the AAAA one has to win.
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer {
+            XCTAssertNoThrow(try group.syncShutdownGracefully())
+        }
+
+        let v4Server = try ServerBootstrap(group: group).bind(host: "127.0.0.1", port: 0).wait()
+        defer {
+            XCTAssertNoThrow(try v4Server.close().wait())
+        }
+        let v6Server = try ServerBootstrap(group: group).bind(host: "::1", port: 0).wait()
+        defer {
+            XCTAssertNoThrow(try v6Server.close().wait())
+        }
+
+        let resolver = DualStackFixedResolver(
+            loop: group.next(),
+            v4: v4Server.localAddress!,
+            v6: v6Server.localAddress!
+        )
+        let client = try ClientBootstrap(group: group)
+            .connect(resolver: resolver, host: "not-a-real-host.invalid", port: v4Server.localAddress!.port!)
+            .wait()
+        defer {
+            XCTAssertNoThrow(try client.close().wait())
+        }
+
+        XCTAssertEqual(client.remoteAddress, v6Server.localAddress,
+                       "stream connections keep RFC 8305's IPv6-first ordering")
+    }
+
     func testResolutionTimeoutAndResolutionInSameTick() throws {
         let channels = ChannelSet()
         let (eyeballer, resolver, loop) = buildEyeballer(host: "example.com", port: 80) {
@@ -1505,6 +1612,32 @@ struct ChannelSet: Sendable, Sequence {
     func finishAll() {
         self.channels.withLockedValue { $0 }.finishAll()
     }
+}
+
+/// A resolver that answers A and AAAA with fixed, deliberately different addresses.
+///
+/// Lets a test state exactly what each family resolves to, so what the connector picks is a
+/// property of the connector rather than of the machine the test runs on.
+private final class DualStackFixedResolver: Resolver, Sendable {
+    private let loop: EventLoop
+    private let v4: SocketAddress
+    private let v6: SocketAddress
+
+    init(loop: EventLoop, v4: SocketAddress, v6: SocketAddress) {
+        self.loop = loop
+        self.v4 = v4
+        self.v6 = v6
+    }
+
+    func initiateAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+        self.loop.makeSucceededFuture([self.v4])
+    }
+
+    func initiateAAAAQuery(host: String, port: Int) -> EventLoopFuture<[SocketAddress]> {
+        self.loop.makeSucceededFuture([self.v6])
+    }
+
+    func cancelQueries() {}
 }
 
 /// A resolver that answers every A query with one fixed address and every AAAA query with none.
