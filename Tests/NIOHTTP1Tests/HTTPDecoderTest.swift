@@ -138,6 +138,53 @@ class HTTPDecoderTest: XCTestCase {
         self.loop.run()
     }
 
+    func testResponseWithBareLineFeedIsRejectedByDefault() throws {
+        try channel.pipeline.syncOperations.addHandler(HTTPRequestEncoder())
+        try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(HTTPResponseDecoder()))
+        try channel.writeOutbound(
+            HTTPClientRequestPart.head(HTTPRequestHead(version: .http1_1, method: .GET, uri: "/"))
+        )
+
+        var buffer = channel.allocator.buffer(capacity: 128)
+        buffer.writeStaticString(
+            "HTTP/1.1 200 OK\r\nContent-Security-Policy: default-src 'self'\n script-src 'self'\r\nContent-Length: 0\r\n\r\n"
+        )
+
+        XCTAssertThrowsError(try channel.writeInbound(buffer)) { error in
+            XCTAssertEqual(.unknown, error as? HTTPParserError)
+        }
+    }
+
+    func testResponseWithBareLineFeedCanBeDecoded() throws {
+        let leniency = NIOHTTPDecoderLeniencyConfiguration(
+            allowsBareLineFeed: true,
+            allowsInvalidHeaderValues: true
+        )
+        try channel.pipeline.syncOperations.addHandler(HTTPRequestEncoder())
+        try channel.pipeline.syncOperations.addHandler(
+            ByteToMessageHandler(HTTPResponseDecoder(leniencyConfiguration: leniency))
+        )
+        try channel.writeOutbound(
+            HTTPClientRequestPart.head(HTTPRequestHead(version: .http1_1, method: .GET, uri: "/"))
+        )
+
+        var buffer = channel.allocator.buffer(capacity: 128)
+        buffer.writeStaticString(
+            "HTTP/1.1 200 OK\r\nContent-Security-Policy: default-src 'self'\n script-src 'self'\r\n\r\n"
+        )
+
+        XCTAssertNoThrow(try channel.writeInbound(buffer))
+        let head = try XCTUnwrap(channel.readInbound(as: HTTPClientResponsePart.self))
+        guard case .head(let responseHead) = head else {
+            return XCTFail("expected response head")
+        }
+        XCTAssertEqual(responseHead.status, .ok)
+        XCTAssertEqual(
+            responseHead.headers.first(name: "Content-Security-Policy"),
+            "default-src 'self' script-src 'self'"
+        )
+    }
+
     func testCorrectlyMaintainIndicesWhenDiscardReadBytes() throws {
         class Receiver: ChannelInboundHandler {
             typealias InboundIn = HTTPServerRequestPart

@@ -51,11 +51,13 @@ private class BetterHTTPParser {
     private var currentFieldByteLength = 0
     private var totalHeadersByteLength = 0
     private var headerFieldCount = 0
+    private var lenientHeaderValueBytes: [UInt8]?
     private var httpParserOffset = 0
     private var rawBytesView: UnsafeRawBufferPointer = .init(start: UnsafeRawPointer(bitPattern: 0xcafbabe), count: 0)
     private var httpErrno: llhttp_errno_t? = nil
     private var richerError: Error? = nil
     private let kind: HTTPDecoderKind
+    private let allowsInvalidHeaderValues: Bool
     var requestHeads = CircularBuffer<HTTPRequestHead>(initialCapacity: 1)
 
     enum MessageContinuation {
@@ -68,11 +70,16 @@ private class BetterHTTPParser {
         Unmanaged<BetterHTTPParser>.fromOpaque(UnsafeRawPointer(opaque!.pointee.data)).takeUnretainedValue()
     }
 
-    init(kind: HTTPDecoderKind, configuration: NIOHTTPDecoderLimitConfiguration) {
+    init(
+        kind: HTTPDecoderKind,
+        limitConfiguration: NIOHTTPDecoderLimitConfiguration,
+        leniencyConfiguration: NIOHTTPDecoderLeniencyConfiguration
+    ) {
         self.kind = kind
-        self.maximumHeaderFieldSize = configuration.maxHeaderFieldSize
-        self.maximumTotalHeadersSize = configuration.maxHeaderListSize
-        self.maximumHeaderFieldCount = configuration.maxHeaderFieldCount
+        self.maximumHeaderFieldSize = limitConfiguration.maxHeaderFieldSize
+        self.maximumTotalHeadersSize = limitConfiguration.maxHeaderListSize
+        self.maximumHeaderFieldCount = limitConfiguration.maxHeaderFieldCount
+        self.allowsInvalidHeaderValues = leniencyConfiguration.allowsInvalidHeaderValues
         self.settings = UnsafeMutablePointer.allocate(capacity: 1)
         c_nio_llhttp_settings_init(self.settings)
         self.settings.pointee.on_body = { opaque, bytes, len in
@@ -141,6 +148,12 @@ private class BetterHTTPParser {
             case .response:
                 c_nio_llhttp_init(parserPtr, HTTP_RESPONSE, self.settings)
             }
+            if leniencyConfiguration.allowsBareLineFeed {
+                c_nio_llhttp_set_lenient_optional_cr_before_lf(parserPtr, 1)
+            }
+            if leniencyConfiguration.allowsInvalidHeaderValues {
+                c_nio_llhttp_set_lenient_headers(parserPtr, 1)
+            }
         }
     }
 
@@ -164,6 +177,21 @@ private class BetterHTTPParser {
         try callout(&self.delegate, .init(rebasing: self.rawBytesView[start..<end]))
     }
 
+    private func finishHeaderValue(
+        _ callout: (inout HTTPDecoderDelegate, UnsafeRawBufferPointer) throws -> Void
+    ) rethrows {
+        guard let valueBytes = self.lenientHeaderValueBytes else {
+            return try self.finish(callout)
+        }
+
+        self.currentFieldByteLength = 0
+        self.firstNonDiscardableOffset = nil
+        self.lenientHeaderValueBytes = nil
+        try valueBytes.withUnsafeBytes { bytes in
+            try callout(&self.delegate, bytes)
+        }
+    }
+
     private func didReceiveBodyData(_ bytes: UnsafeRawBufferPointer) {
         self.delegate.didReceiveBody(bytes)
     }
@@ -174,13 +202,13 @@ private class BetterHTTPParser {
         case .headerName, .trailerName:
             ()
         case .headerValue:
-            self.finish { delegate, bytes in
+            self.finishHeaderValue { delegate, bytes in
                 delegate.didReceiveHeaderValue(bytes)
             }
             self.start(bytes: bytes, newState: .headerName)
             isNewField = true
         case .trailerValue:
-            self.finish { delegate, bytes in
+            self.finishHeaderValue { delegate, bytes in
                 delegate.didReceiveTrailerValue(bytes)
             }
             self.start(bytes: bytes, newState: .trailerName)
@@ -222,13 +250,34 @@ private class BetterHTTPParser {
                     try delegate.didReceiveHeaderName(bytes)
                 }
                 self.start(bytes: bytes, newState: .headerValue)
+                if self.allowsInvalidHeaderValues {
+                    self.lenientHeaderValueBytes = []
+                }
             case .trailerName:
                 try self.finish { delegate, bytes in
                     try delegate.didReceiveTrailerName(bytes)
                 }
                 self.start(bytes: bytes, newState: .trailerValue)
+                if self.allowsInvalidHeaderValues {
+                    self.lenientHeaderValueBytes = []
+                }
             case .beforeMessageBegin, .afterMessageBegin, .headersComplete, .url:
                 preconditionFailure()
+            }
+            if self.lenientHeaderValueBytes != nil {
+                var startIndex = bytes.startIndex
+                if self.lenientHeaderValueBytes?.isEmpty == false,
+                    startIndex < bytes.endIndex,
+                    bytes[startIndex] == UInt8(ascii: " ") || bytes[startIndex] == UInt8(ascii: "\t")
+                {
+                    self.lenientHeaderValueBytes?.append(UInt8(ascii: " "))
+                    while startIndex < bytes.endIndex,
+                        bytes[startIndex] == UInt8(ascii: " ") || bytes[startIndex] == UInt8(ascii: "\t")
+                    {
+                        startIndex = bytes.index(after: startIndex)
+                    }
+                }
+                self.lenientHeaderValueBytes?.append(contentsOf: bytes[startIndex..<bytes.endIndex])
             }
             return self.validateHeaderLength(bytes.count)
         } catch {
@@ -277,7 +326,7 @@ private class BetterHTTPParser {
         case .headersComplete:
             ()
         case .trailerValue:
-            self.finish { delegate, bytes in
+            self.finishHeaderValue { delegate, bytes in
                 delegate.didReceiveTrailerValue(bytes)
             }
         case .beforeMessageBegin, .headerName, .headerValue, .trailerName, .afterMessageBegin, .url:
@@ -297,7 +346,7 @@ private class BetterHTTPParser {
     ) -> MessageContinuation {
         switch self.decodingState {
         case .headerValue:
-            self.finish { delegate, bytes in
+            self.finishHeaderValue { delegate, bytes in
                 delegate.didReceiveHeaderValue(bytes)
             }
         case .url:
@@ -562,6 +611,29 @@ public struct NIOHTTPDecoderLimitConfiguration: Sendable, Hashable {
     }
 }
 
+/// Configuration for lenient HTTP/1 parsing.
+///
+/// All leniency options are disabled by default. Enable them only when interoperating with a peer
+/// that cannot be fixed, because accepting malformed HTTP can introduce request-smuggling risks
+/// when another HTTP parser handles the same bytes differently.
+public struct NIOHTTPDecoderLeniencyConfiguration: Sendable, Hashable {
+    /// Whether a line feed (`LF`) may terminate a line without a preceding carriage return (`CR`).
+    public var allowsBareLineFeed: Bool
+
+    /// Whether invalid header values, including obsolete folded values, may be parsed.
+    ///
+    /// Enabling this option may expose applications to request-smuggling attacks.
+    public var allowsInvalidHeaderValues: Bool
+
+    public init(
+        allowsBareLineFeed: Bool = false,
+        allowsInvalidHeaderValues: Bool = false
+    ) {
+        self.allowsBareLineFeed = allowsBareLineFeed
+        self.allowsInvalidHeaderValues = allowsInvalidHeaderValues
+    }
+}
+
 /// A `ChannelInboundHandler` that parses HTTP/1-style messages, converting them from
 /// unstructured bytes to a sequence of HTTP messages.
 ///
@@ -588,6 +660,7 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
     private let leftOverBytesStrategy: RemoveAfterUpgradeStrategy
     private let informationalResponseStrategy: NIOInformationalResponseStrategy
     private let kind: HTTPDecoderKind
+    private let normalizeHeaderLineFolding: Bool
     private var stopParsing = false  // set on upgrade or HTTP version error
     private var lastResponseHeaderWasInformational = false
 
@@ -632,10 +705,12 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
     ///   - informationalResponseStrategy: Should informational responses (like http status 100) be forwarded or dropped.
     ///                              Default is `.drop`. This property is only respected when decoding responses.
     ///   - limitConfiguration: The configuration for the decoder's parsing limits.
+    ///   - leniencyConfiguration: The configuration for accepting malformed HTTP.
     public init(
         leftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes,
         informationalResponseStrategy: NIOInformationalResponseStrategy = .drop,
-        limitConfiguration: NIOHTTPDecoderLimitConfiguration = .init()
+        limitConfiguration: NIOHTTPDecoderLimitConfiguration = .init(),
+        leniencyConfiguration: NIOHTTPDecoderLeniencyConfiguration = .init()
     ) {
         self.headers.reserveCapacity(16)
         if In.self == HTTPServerRequestPart.self {
@@ -645,9 +720,14 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
         } else {
             preconditionFailure("unknown HTTP message type \(In.self)")
         }
-        self.parser = BetterHTTPParser(kind: kind, configuration: limitConfiguration)
+        self.parser = BetterHTTPParser(
+            kind: kind,
+            limitConfiguration: limitConfiguration,
+            leniencyConfiguration: leniencyConfiguration
+        )
         self.leftOverBytesStrategy = leftOverBytesStrategy
         self.informationalResponseStrategy = informationalResponseStrategy
+        self.normalizeHeaderLineFolding = leniencyConfiguration.allowsInvalidHeaderValues
     }
 
     /// Creates a request decoder that feeds each decoded request's method to `responseEncoder`, so
@@ -699,7 +779,7 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
     }
 
     func didReceiveHeaderValue(_ bytes: UnsafeRawBufferPointer) {
-        self.headers.append((self.currentHeaderName!, String(decoding: bytes, as: Unicode.UTF8.self)))
+        self.headers.append((self.currentHeaderName!, self.makeHeaderValue(bytes)))
         self.currentHeaderName = nil
     }
 
@@ -717,8 +797,41 @@ public final class HTTPDecoder<In, Out>: ByteToMessageDecoder, HTTPDecoderDelega
         if self.trailers == nil {
             self.trailers = []
         }
-        self.trailers?.append((self.currentHeaderName!, String(decoding: bytes, as: Unicode.UTF8.self)))
+        self.trailers?.append((self.currentHeaderName!, self.makeHeaderValue(bytes)))
         self.currentHeaderName = nil
+    }
+
+    private func makeHeaderValue(_ bytes: UnsafeRawBufferPointer) -> String {
+        guard self.normalizeHeaderLineFolding else {
+            return String(decoding: bytes, as: Unicode.UTF8.self)
+        }
+
+        var unfolded = [UInt8]()
+        unfolded.reserveCapacity(bytes.count)
+        var index = bytes.startIndex
+        while index < bytes.endIndex {
+            let byte = bytes[index]
+            let nextIndex = bytes.index(after: index)
+            if byte == UInt8(ascii: "\n"),
+                nextIndex < bytes.endIndex,
+                bytes[nextIndex] == UInt8(ascii: " ") || bytes[nextIndex] == UInt8(ascii: "\t")
+            {
+                if unfolded.last == UInt8(ascii: "\r") {
+                    unfolded.removeLast()
+                }
+                unfolded.append(UInt8(ascii: " "))
+                index = nextIndex
+                while index < bytes.endIndex,
+                    bytes[index] == UInt8(ascii: " ") || bytes[index] == UInt8(ascii: "\t")
+                {
+                    index = bytes.index(after: index)
+                }
+            } else {
+                unfolded.append(byte)
+                index = nextIndex
+            }
+        }
+        return String(decoding: unfolded, as: Unicode.UTF8.self)
     }
 
     func didReceiveURL(_ bytes: UnsafeRawBufferPointer) {
