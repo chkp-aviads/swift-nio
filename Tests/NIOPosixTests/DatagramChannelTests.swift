@@ -634,6 +634,33 @@ class DatagramChannelTests: XCTestCase {
         #endif
     }
 
+    func testSettingSoReuseportAllowsTwoChannelsToBindTheSamePort() throws {
+        #if os(Windows)
+        throw XCTSkip("SO_REUSEPORT is not available on Windows")
+        #else
+        let first = try assertNoThrowWithValue(
+            DatagramBootstrap(group: group)
+                .channelOption(.socketOption(.so_reuseport), value: 1)
+                .bind(host: "127.0.0.1", port: 0)
+                .wait()
+        )
+        defer {
+            XCTAssertNoThrow(try first.close().wait())
+        }
+        let second = try assertNoThrowWithValue(
+            DatagramBootstrap(group: group)
+                .channelOption(.socketOption(.so_reuseport), value: 1)
+                .bind(to: first.localAddress!)
+                .wait()
+        )
+        defer {
+            XCTAssertNoThrow(try second.close().wait())
+        }
+        XCTAssertTrue(try getBoolSocketOption(channel: first, level: .socket, name: .so_reuseport))
+        XCTAssertTrue(try getBoolSocketOption(channel: second, level: .socket, name: .so_reuseport))
+        #endif
+    }
+
     func testUnprocessedOutboundUserEventFailsOnDatagramChannel() throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer {
@@ -985,6 +1012,44 @@ class DatagramChannelTests: XCTestCase {
             }()
         )
     }
+
+    #if canImport(Darwin)
+    func testSetGetIPDontFragOption() throws {
+        let option = ChannelOptions.ipOption(.ip_dontfrag)
+        try self.firstChannel.setOption(option, value: 1).wait()
+        XCTAssertEqual(try self.firstChannel.getOption(option).wait(), 1)
+    }
+    #endif
+
+    #if canImport(Darwin) || os(Linux)
+    func testSetGetIPv6DontFragOption() throws {
+        guard System.supportsIPv6 else {
+            return  // need to skip IPv6 tests if we don't support it.
+        }
+        let channel = try self.buildChannel(group: self.group, host: "::1")
+        let option = ChannelOptions.Types.SocketOption(level: .ipv6, name: .ipv6_dontfrag)
+        try channel.setOption(option, value: 1).wait()
+        XCTAssertEqual(try channel.getOption(option).wait(), 1)
+    }
+    #endif
+
+    #if os(Linux)
+    func testSetGetIPMTUDiscoverOption() throws {
+        let option = ChannelOptions.ipOption(.ip_mtu_discover)
+        try self.firstChannel.setOption(option, value: SocketOptionValue(IP_PMTUDISC_PROBE)).wait()
+        XCTAssertEqual(try self.firstChannel.getOption(option).wait(), SocketOptionValue(IP_PMTUDISC_PROBE))
+    }
+
+    func testSetGetIPv6MTUDiscoverOption() throws {
+        guard System.supportsIPv6 else {
+            return  // need to skip IPv6 tests if we don't support it.
+        }
+        let channel = try self.buildChannel(group: self.group, host: "::1")
+        let option = ChannelOptions.Types.SocketOption(level: .ipv6, name: .ipv6_mtu_discover)
+        try channel.setOption(option, value: SocketOptionValue(IPV6_PMTUDISC_PROBE)).wait()
+        XCTAssertEqual(try channel.getOption(option).wait(), SocketOptionValue(IPV6_PMTUDISC_PROBE))
+    }
+    #endif
 
     private func testSimpleReceivePacketInfo(address: String) throws {
         // Fake sending packet to self on the loopback interface
